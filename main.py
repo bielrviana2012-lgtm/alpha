@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 class AlphaBot(commands.Bot):
     async def setup_hook(self):
         await init_db()
-        for extension in ("cogs.economy", "cogs.moderation", "cogs.community", "cogs.fun", "cogs.ai_chat", "cogs.levels"):
+         for extension in (     "cogs.economy",     "cogs.moderation",     "cogs.community",     "cogs.fun",     "cogs.ai_chat",     "cogs.levels",     "cogs.updates", ):
             try:
                 await self.load_extension(extension)
                 logging.info("Módulo carregado: %s", extension)
