@@ -35,7 +35,7 @@ class AIChat(commands.Cog):
         response = await self.bot.loop.run_in_executor(
             None,
             lambda: self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=(
                     "Você é o Sr.Alpha, assistente amigável de uma "
                     "comunidade Discord. Responda em português brasileiro, "
