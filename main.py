@@ -1,17 +1,12 @@
-```python
 import logging
-
 import discord
-from discord import app_commands
 from discord.ext import commands
-
 import config
-from database import init_db, increment_command_count
-
+from database import init_db
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
 
 
@@ -40,10 +35,9 @@ class AlphaBot(commands.Bot):
             guild = discord.Object(id=config.GUILD_ID)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-
             logging.info(
                 "Comandos sincronizados no servidor de teste %s",
-                config.GUILD_ID,
+                config.GUILD_ID
             )
         else:
             await self.tree.sync()
@@ -57,24 +51,8 @@ intents.message_content = True
 bot = AlphaBot(
     command_prefix="!",
     intents=intents,
-    help_command=None,
+    help_command=None
 )
-
-
-@bot.listen("on_interaction")
-async def count_application_commands(interaction: discord.Interaction):
-    if interaction.type != discord.InteractionType.application_command:
-        return
-
-    # Registra apenas comandos slash, sem contar menus de contexto.
-    if interaction.data.get("type") != 1:
-        return
-
-    try:
-        await increment_command_count()
-        logging.debug("Comando slash registrado no contador.")
-    except Exception:
-        logging.exception("Falha ao registrar comando no banco.")
 
 
 @bot.event
@@ -82,73 +60,59 @@ async def on_ready():
     logging.info(
         "Sr.Alpha conectado como %s (ID %s)",
         bot.user,
-        bot.user.id,
+        bot.user.id
     )
-
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="a comunidade Alpha",
+            name="a comunidade Alpha"
         )
     )
 
 
 @bot.tree.command(
     name="ajuda",
-    description="Mostra os sistemas do Sr.Alpha",
+    description="Mostra os sistemas do Sr.Alpha"
 )
 async def ajuda(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🤖 Sr.Alpha | Central de ajuda",
         description="Seu bot geral para a comunidade.",
-        color=discord.Color.blurple(),
+        color=discord.Color.blurple()
     )
 
     embed.add_field(
         name="💰 Economia",
-        value=(
-            "`/saldo` `/daily` `/trabalhar` `/depositar` "
-            "`/sacar` `/transferir` `/ranking` `/loja` `/comprar`"
-        ),
-        inline=False,
+        value="/saldo /daily /trabalhar /depositar "
+              "/sacar /transferir /ranking /loja /comprar",
+        inline=False
     )
-
     embed.add_field(
         name="🛡️ Moderação",
-        value=(
-            "`/aviso` `/avisos` `/limpar` `/timeout` "
-            "`/expulsar` `/banir`"
-        ),
-        inline=False,
+        value="/aviso /avisos /limpar /timeout "
+              "/expulsar /banir",
+        inline=False
     )
-
     embed.add_field(
         name="💬 Comunidade",
-        value=(
-            "`/sugerir` `/status_sugestao` `/ticket` "
-            "`/fechar_ticket`"
-        ),
-        inline=False,
+        value="/sugerir /status_sugestao /ticket "
+              "/fechar_ticket",
+        inline=False
     )
-
     embed.add_field(
         name="🎮 Diversão",
-        value="`/quiz` `/ppt` `/perfil` `/level`",
-        inline=False,
+        value="/quiz /ppt /perfil /level",
+        inline=False
     )
-
     embed.add_field(
         name="✨ Inteligência Artificial",
-        value="`/perguntar` — assistente de IA do Sr.Alpha",
-        inline=False,
+        value="/perguntar — assistente de IA do Sr.Alpha",
+        inline=False
     )
-
     embed.add_field(
         name="🚀 Atualizações",
-        value=(
-            "`/anunciar_atualizacao` — anuncia novidades do bot"
-        ),
-        inline=False,
+        value="/anunciar_atualizacao — anuncia novidades do bot",
+        inline=False
     )
 
     embed.set_footer(
@@ -157,18 +121,18 @@ async def ajuda(interaction: discord.Interaction):
 
     await interaction.response.send_message(
         embed=embed,
-        ephemeral=True,
+        ephemeral=True
     )
 
 
 @bot.tree.error
 async def on_app_command_error(
     interaction: discord.Interaction,
-    error: Exception,
+    error: Exception
 ):
     logging.error(
         "Erro em comando slash",
-        exc_info=(type(error), error, error.__traceback__),
+        exc_info=(type(error), error, error.__traceback__)
     )
 
     message = (
@@ -177,25 +141,27 @@ async def on_app_command_error(
     )
 
     if isinstance(error, app_commands.MissingPermissions):
-        message = "Você não tem permissão para usar o comando."
+        message = "Você não tem permissão para usar este comando."
 
     if interaction.response.is_done():
         await interaction.followup.send(
             message,
-            ephemeral=True,
+            ephemeral=True
         )
     else:
         await interaction.response.send_message(
             message,
-            ephemeral=True,
+            ephemeral=True
         )
+
+
+from discord import app_commands
 
 
 if __name__ == "__main__":
     if not config.DISCORD_TOKEN:
         raise SystemExit(
-            "Configure DISCORD_TOKEN nas variáveis do ambiente."
+            "Configure DISCORD_TOKEN nas variáveis do Railway."
         )
 
     bot.run(config.DISCORD_TOKEN, log_handler=None)
-```
