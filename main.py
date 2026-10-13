@@ -16,6 +16,7 @@ class AlphaBot(commands.Bot):
 
         extensions = (
             "cogs.economy",
+            "cogs.premium",
             "cogs.moderation",
             "cogs.community",
             "cogs.fun",
