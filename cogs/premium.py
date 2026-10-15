@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from database import DB_PATH, ensure_user
 import config
+from cogs.ui_v2 import make_v2_panel
 
 
 COR = discord.Color.from_rgb(145, 103, 255)
@@ -62,47 +63,18 @@ class Premium(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title="✦ PERFIL ALPHA",
-            description=f"Confira a jornada de {alvo.mention}.",
-            color=COR,
+        painel = make_v2_panel(
+            "✦ PERFIL ALPHA",
+            f"Confira a jornada de {alvo.mention}.",
+            sections=[
+                ("⭐ Nível", f"`{dados['level']}`"),
+                ("✨ XP", f"`{dados['xp']:,}`"),
+                ("💰 Carteira", f"`{dados['wallet']:,}` {config.CURRENCY_NAME}"),
+                ("🏦 Banco", f"`{dados['bank']:,}` {config.CURRENCY_NAME}"),
+                ("🪙 Patrimônio", f"`{dados['wallet'] + dados['bank']:,}` {config.CURRENCY_NAME}"),
+            ],
         )
-        embed.set_thumbnail(url=alvo.display_avatar.url)
-        embed.add_field(
-            name="⭐ Nível",
-            value=f"`{dados['level']}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="✨ XP",
-            value=f"`{dados['xp']:,}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="💰 Carteira",
-            value=f"`{dados['wallet']:,}` {config.CURRENCY_NAME}",
-            inline=False,
-        )
-        embed.add_field(
-            name="🏦 Banco",
-            value=f"`{dados['bank']:,}` {config.CURRENCY_NAME}",
-            inline=True,
-        )
-        embed.add_field(
-            name="🪙 Patrimônio",
-            value=(
-                f"`{dados['wallet'] + dados['bank']:,}` "
-                f"{config.CURRENCY_NAME}"
-            ),
-            inline=True,
-        )
-        embed.set_footer(
-            text="Sr.Alpha • Family Alpha",
-            icon_url=self.bot.user.display_avatar.url
-            if self.bot.user else None,
-        )
-
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(view=painel)
 
     @app_commands.command(
         name="conquistas",
@@ -159,27 +131,13 @@ class Premium(commands.Cog):
             if not obtida
         ]
 
-        embed = discord.Embed(
-            title=f"🏆 Conquistas de {alvo.display_name}",
-            description=(
-                "\n".join(desbloqueadas)
-                if desbloqueadas
-                else "Nenhuma conquista desbloqueada ainda."
-            ),
-            color=COR,
+        painel = make_v2_panel(
+            f"🏆 Conquistas de {alvo.display_name}",
+            "\n".join(desbloqueadas) if desbloqueadas else "Nenhuma conquista desbloqueada ainda.",
+            sections=[("Próximas conquistas", "\n".join(bloqueadas))] if bloqueadas else None,
+            footer="Continue evoluindo no Family Alpha!",
         )
-
-        if bloqueadas:
-            embed.add_field(
-                name="Próximas conquistas",
-                value="\n".join(bloqueadas),
-                inline=False,
-            )
-
-        embed.set_thumbnail(url=alvo.display_avatar.url)
-        embed.set_footer(text="Continue evoluindo no Family Alpha!")
-
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(view=painel)
 
     @app_commands.command(
         name="top",
@@ -254,14 +212,12 @@ class Premium(commands.Cog):
 
             linhas.append(f"{medalha} **{nome}** — {valor}")
 
-        embed = discord.Embed(
-            title=f"🏆 RANKING ALPHA • {tipo.name.upper()}",
-            description="\n".join(linhas),
-            color=COR,
+        painel = make_v2_panel(
+            f"🏆 RANKING ALPHA • {tipo.name.upper()}",
+            "\n".join(linhas),
+            footer="Family Alpha • Top 10",
         )
-        embed.set_footer(text="Family Alpha • Top 10")
-
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(view=painel)
 
 
 async def setup(bot: commands.Bot):
