@@ -238,19 +238,26 @@ class ColorRoles(commands.Cog):
         with connect_db() as db:
             panels = db.execute(
                 """
-                SELECT guild_id, message_id, title, description
+                SELECT guild_id, channel_id, message_id, title, description
                 FROM color_panels
                 """
             ).fetchall()
 
-        for guild_id, message_id, title, description in panels:
+        for guild_id, channel_id, message_id, title, description in panels:
             colors = get_colors(guild_id)
             view = ColorPanelView(self.bot, guild_id, colors, title, description)
-
-            self.bot.add_view(
-                view,
-                message_id=message_id
-            )
+            self.bot.add_view(view, message_id=message_id)
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except discord.HTTPException:
+                    continue
+            try:
+                message = await channel.fetch_message(message_id)
+                await message.edit(embeds=[], view=view)
+            except discord.HTTPException:
+                pass
 
     async def refresh_panel(self, guild_id):
         panel = get_panel(guild_id)
@@ -272,9 +279,7 @@ class ColorRoles(commands.Cog):
             view = ColorPanelView(
                 self.bot, guild_id, get_colors(guild_id), title, description
             )
-            await message.edit(
-                view=view
-            )
+            await message.edit(embeds=[], view=view)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
 
@@ -331,11 +336,11 @@ class ColorRoles(commands.Cog):
                             message_id
                         )
                         if old_channel.id == canal.id:
-                            await old_message.edit(view=view)
+                            await old_message.edit(embeds=[], view=view)
                             message = old_message
                         else:
                             message = await canal.send(view=view)
-                            await old_message.edit(view=None)
+                            await old_message.edit(embeds=[], view=None)
                     except discord.NotFound:
                         message = await canal.send(view=view)
                 else:
