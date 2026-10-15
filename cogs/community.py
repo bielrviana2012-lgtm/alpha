@@ -763,13 +763,7 @@ class Community(commands.Cog):
             )
             sid = cur.lastrowid
             await db.commit()
-        embed = discord.Embed(title=f"💡 Sugestão #{sid}", description=texto, color=PURPLE)
-        embed.add_field(name="👤 Sugerida por", value=f"{interaction.user.mention}\n`{interaction.user}`", inline=False)
-        embed.add_field(name="📌 Status", value="🟡 Em análise", inline=True)
-        embed.add_field(name="👍 Apoio", value="0", inline=True)
-        embed.add_field(name="👎 Não apoio", value="0", inline=True)
-        embed.set_footer(text="Sr.Alpha • Sistema de sugestões")
-        msg = await channel.send(embed=embed, view=SuggestionView(sid))
+        msg = await channel.send(view=SuggestionView(sid, texto, interaction.user.id))
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE suggestions SET message_id=? WHERE id=?", (msg.id, sid))
             await db.commit()
@@ -783,12 +777,18 @@ class Community(commands.Cog):
         if not interaction.user.guild_permissions.manage_messages:
             return await interaction.response.send_message("Você precisa da permissão Gerenciar mensagens para alterar sugestões.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute("SELECT message_id,channel_id FROM suggestions WHERE id=? AND guild_id=?", (numero, interaction.guild_id))
+            cur = await db.execute(
+                "SELECT message_id,channel_id,text,user_id FROM suggestions WHERE id=? AND guild_id=?",
+                (numero, interaction.guild_id),
+            )
             row = await cur.fetchone()
             if not row:
                 return await interaction.response.send_message("Sugestão não encontrada.", ephemeral=True)
-            message_id, channel_id = row
-            await db.execute("UPDATE suggestions SET status=? WHERE id=? AND guild_id=?", (status.value, numero, interaction.guild_id))
+            message_id, channel_id, texto, autor_id = row
+            await db.execute(
+                "UPDATE suggestions SET status=?,admin_id=?,response=? WHERE id=? AND guild_id=?",
+                (status.value, interaction.user.id, resposta.strip()[:1000], numero, interaction.guild_id),
+            )
             await db.commit()
         channel = self.bot.get_channel(channel_id)
         if channel is None:
@@ -800,27 +800,18 @@ class Community(commands.Cog):
             msg = await channel.fetch_message(message_id)
         except discord.HTTPException:
             return await interaction.response.send_message("Não consegui encontrar a mensagem da sugestão.", ephemeral=True)
-        embed = msg.embeds[0]
-        emoji = {"Aprovada": "🟢", "Recusada": "🔴", "Em análise": "🟡"}[status.value]
-        index = next((i for i, field in enumerate(embed.fields) if field.name == "📌 Status"), None)
-        if index is None:
-            embed.add_field(name="📌 Status", value=f"{emoji} {status.value}", inline=True)
-        else:
-            embed.set_field_at(index, name="📌 Status", value=f"{emoji} {status.value}", inline=True)
-        decision = f"**Responsável:** {interaction.user.mention}\n**Resultado:** {status.value}"
-        index = next((i for i, field in enumerate(embed.fields) if field.name == "🛡️ Decisão da equipe"), None)
-        if index is None:
-            embed.add_field(name="🛡️ Decisão da equipe", value=decision, inline=False)
-        else:
-            embed.set_field_at(index, name="🛡️ Decisão da equipe", value=decision, inline=False)
-        response = resposta.strip()[:1024]
-        index = next((i for i, field in enumerate(embed.fields) if field.name == "💬 Resposta da equipe"), None)
-        if response:
-            if index is None:
-                embed.add_field(name="💬 Resposta da equipe", value=response, inline=False)
-            else:
-                embed.set_field_at(index, name="💬 Resposta da equipe", value=response, inline=False)
-        await msg.edit(embed=embed, view=SuggestionView(numero))
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END), SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) FROM suggestion_votes WHERE suggestion_id=?",
+                (numero,),
+            )
+            yes, no = await cur.fetchone()
+            cur = await db.execute("SELECT admin_id,response FROM suggestions WHERE id=?", (numero,))
+            admin_id, saved_response = await cur.fetchone()
+        await msg.edit(embeds=[], view=SuggestionView(
+            numero, texto, autor_id, status.value, yes or 0, no or 0,
+            admin_id, saved_response,
+        ))
         await interaction.response.send_message(f"✅ Sugestão #{numero} atualizada para **{status.value}** por {interaction.user.mention}.", ephemeral=True)
 
     @app_commands.command(name="ticket", description="Cria um painel de tickets com as configurações atuais")
