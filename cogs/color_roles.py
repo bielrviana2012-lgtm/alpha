@@ -63,48 +63,38 @@ def get_panel(guild_id):
         ).fetchone()
 
 
-def build_embed(guild_id, title, description):
-    embed = discord.Embed(
-        title=f"🎨・{title}",
-        description=description,
-        color=PURPLE
-    )
-
+def build_panel_container(guild_id, title, description):
+    container = discord.ui.Container(accent_colour=PURPLE)
+    container.add_item(discord.ui.TextDisplay(f"# 🎨・{title}"))
+    container.add_item(discord.ui.TextDisplay(description))
     colors = get_colors(guild_id)
-
     if colors:
-        lines = [
-            f"{emoji} **{name}** — <@&{role_id}>"
-            for name, role_id, emoji in colors
-        ]
-        embed.add_field(
-            name="🌈 Cores disponíveis",
-            value="\n".join(lines),
-            inline=False
-        )
-        embed.add_field(
-            name="💡 Como escolher",
-            value=(
-                "Clique no botão da cor desejada.\n"
-                "Clique novamente para remover sua cor."
-            ),
-            inline=False
-        )
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(
+            "**🌈 Cores disponíveis**\n" +
+            "\n".join(f"{emoji} **{name}** — <@&{role_id}>" for name, role_id, emoji in colors)
+        ))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(
+            "**💡 Como escolher**\nClique no botão da cor desejada.\nClique novamente para remover sua cor."
+        ))
     else:
-        embed.description = (
-            f"{description}\n\n"
-            "⚠️ Ainda não existem cores configuradas."
-        )
-
-    embed.set_footer(text="Sr.Alpha • Family Alpha")
-    return embed
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("⚠️ Ainda não existem cores configuradas."))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+    return container
 
 
-class ColorPanelView(discord.ui.View):
-    def __init__(self, bot, guild_id, colors):
+class ColorPanelView(discord.ui.LayoutView):
+    def __init__(self, bot, guild_id, colors, title="Escolha sua cor",
+                 description="Clique no botão da sua cor favorita para receber o cargo."):
         super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
+        self.add_item(build_panel_container(guild_id, title, description))
+        row = discord.ui.ActionRow()
+        row_count = 0
 
         for name, role_id, emoji in colors:
             button = discord.ui.Button(
@@ -114,7 +104,15 @@ class ColorPanelView(discord.ui.View):
                 custom_id=f"srcolor:{role_id}"
             )
             button.callback = self.make_callback(role_id)
-            self.add_item(button)
+            if row_count == 5:
+                self.add_item(row)
+                row = discord.ui.ActionRow()
+                row_count = 0
+            row.add_item(button)
+            row_count += 1
+
+        if row_count:
+            self.add_item(row)
 
     def make_callback(self, role_id):
         async def callback(interaction: discord.Interaction):
@@ -247,7 +245,7 @@ class ColorRoles(commands.Cog):
 
         for guild_id, message_id in panels:
             colors = get_colors(guild_id)
-            view = ColorPanelView(self.bot, guild_id, colors)
+            view = ColorPanelView(self.bot, guild_id, colors, title, description)
 
             self.bot.add_view(
                 view,
@@ -272,10 +270,9 @@ class ColorRoles(commands.Cog):
         try:
             message = await channel.fetch_message(message_id)
             view = ColorPanelView(
-                self.bot, guild_id, get_colors(guild_id)
+                self.bot, guild_id, get_colors(guild_id), title, description
             )
             await message.edit(
-                embed=build_embed(guild_id, title, description),
                 view=view
             )
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -311,8 +308,7 @@ class ColorRoles(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         colors = get_colors(guild.id)
-        view = ColorPanelView(self.bot, guild.id, colors)
-        embed = build_embed(guild.id, titulo, descricao)
+        view = ColorPanelView(self.bot, guild.id, colors, titulo, descricao)
 
         try:
             panel = get_panel(guild.id)
@@ -335,17 +331,15 @@ class ColorRoles(commands.Cog):
                             message_id
                         )
                         if old_channel.id == canal.id:
-                            await old_message.edit(embed=embed, view=view)
+                            await old_message.edit(view=view)
                             message = old_message
                         else:
-                            message = await canal.send(
-                                embed=embed, view=view
-                            )
+                            message = await canal.send(view=view)
                             await old_message.edit(view=None)
                     except discord.NotFound:
-                        message = await canal.send(embed=embed, view=view)
+                        message = await canal.send(view=view)
                 else:
-                    message = await canal.send(embed=embed, view=view)
+                    message = await canal.send(view=view)
             else:
                 message = await canal.send(embed=embed, view=view)
 
@@ -522,15 +516,16 @@ class ColorRoles(commands.Cog):
             role_text = role.mention if role else f"`ID {role_id}`"
             lines.append(f"{emoji} **{nome}** — {role_text}")
 
-        embed = discord.Embed(
-            title="🎨 Cores configuradas",
-            description="\n".join(lines),
-            color=PURPLE
-        )
-        embed.set_footer(text="Sr.Alpha • Family Alpha")
+        layout = discord.ui.LayoutView(timeout=None)
+        panel = discord.ui.Container(accent_colour=PURPLE)
+        panel.add_item(discord.ui.TextDisplay("# 🎨 Cores configuradas"))
+        panel.add_item(discord.ui.TextDisplay("\n".join(lines)))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+        layout.add_item(panel)
 
         await interaction.response.send_message(
-            embed=embed,
+            view=layout,
             ephemeral=True
         )
 
