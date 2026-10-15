@@ -78,13 +78,15 @@ class SuggestionLayoutView(discord.ui.LayoutView):
         self.add_item(container)
 
         yes = discord.ui.Button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success,
-                                custom_id=f"sr_alpha:suggestion_yes:{suggestion_id}")
+                                custom_id="sr_alpha:suggestion_yes")
         no = discord.ui.Button(label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary,
-                               custom_id=f"sr_alpha:suggestion_no:{suggestion_id}")
+                               custom_id="sr_alpha:suggestion_no")
         yes.callback = self.support
         no.callback = self.oppose
-        self.add_item(yes)
-        self.add_item(no)
+        actions = discord.ui.ActionRow()
+        actions.add_item(yes)
+        actions.add_item(no)
+        self.add_item(actions)
 
     async def support(self, interaction: discord.Interaction):
         try:
@@ -230,4 +232,5 @@ class Community(commands.Cog):
 async def setup(bot: commands.Bot):
     await init_community_tables()
     await bot.add_cog(Community(bot))
+    bot.add_view(SuggestionLayoutView(0, "", 0))
     log.info("Módulo de comunidade carregado com Components V2.")
