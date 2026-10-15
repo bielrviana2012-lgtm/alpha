@@ -323,7 +323,22 @@ class TicketControlView(discord.ui.LayoutView):
                 (interaction.user.id, interaction.channel_id),
             )
             await db.commit()
-        await interaction.response.send_message(f"🧑‍💼 Atendimento assumido por {interaction.user.mention}.")
+        staff_role = interaction.guild.get_role(category["staff_role_id"]) if category else None
+        staff_mention = staff_role.mention if staff_role else "Cargo da equipe não encontrado"
+        description = (
+            f"**👤 Solicitante:** <@{record['user_id']}>\n"
+            f"**🛡️ Equipe responsável:** {staff_mention}\n"
+            f"**🧑‍💼 Reivindicado por:** {interaction.user.mention}"
+        )
+        view = TicketControlView(
+            f"{category['emoji']} {category['name']}" if category else "🎫 Ticket de atendimento",
+            description,
+        )
+        await interaction.response.edit_message(
+            content=f"👤 Solicitante: <@{record['user_id']}> | 🛡️ Equipe: {staff_mention} | 🧑‍💼 Responsável: {interaction.user.mention}",
+            view=view,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=True),
+        )
         try:
             await interaction.channel.edit(topic=f"sr-ticket:{record['user_id']}:{record['category_id']}:{interaction.user.id}")
         except discord.HTTPException:
