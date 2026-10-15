@@ -11,6 +11,26 @@ from cogs.community import get_ticket_categories, TicketCategorySelect
 log = logging.getLogger("Sr.Alpha.EmbedBuilder")
 
 
+async def open_ticket_callback(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "Este botão só funciona dentro de um servidor.", ephemeral=True
+        )
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    categories = await get_ticket_categories(interaction.guild.id)
+    layout = discord.ui.LayoutView(timeout=180)
+    panel = discord.ui.Container(accent_colour=discord.Color.from_rgb(145, 103, 255))
+    panel.add_item(discord.ui.TextDisplay("# 🎫 Abrir um ticket"))
+    panel.add_item(discord.ui.TextDisplay(
+        "Selecione abaixo a categoria que melhor corresponde à sua solicitação."
+    ))
+    layout.add_item(panel)
+    row = discord.ui.ActionRow()
+    row.add_item(TicketCategorySelect(interaction.guild.id, categories))
+    layout.add_item(row)
+    await interaction.followup.send(view=layout, ephemeral=True)
+
+
 class TicketShortcutView(discord.ui.LayoutView):
     """Botão persistente que abre o seletor de categorias de ticket."""
 
@@ -25,28 +45,9 @@ class TicketShortcutView(discord.ui.LayoutView):
             label="Abrir ticket", emoji="🎫", style=discord.ButtonStyle.primary,
             custom_id="alpha_embed_open_ticket",
         )
-        button.callback = TicketShortcutView().open_ticket
+        button.callback = open_ticket_callback
         row.add_item(button)
         layout.add_item(row)
-
-    async def open_ticket(self, interaction: discord.Interaction):
-        if interaction.guild is None:
-            return await interaction.response.send_message(
-                "Este botão só funciona dentro de um servidor.", ephemeral=True
-            )
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        categories = await get_ticket_categories(interaction.guild.id)
-        layout = discord.ui.LayoutView(timeout=180)
-        panel = discord.ui.Container(accent_colour=discord.Color.from_rgb(145, 103, 255))
-        panel.add_item(discord.ui.TextDisplay("# 🎫 Abrir um ticket"))
-        panel.add_item(discord.ui.TextDisplay(
-            "Selecione abaixo a categoria que melhor corresponde à sua solicitação."
-        ))
-        layout.add_item(panel)
-        row = discord.ui.ActionRow()
-        row.add_item(TicketCategorySelect(interaction.guild.id, categories))
-        layout.add_item(row)
-        await interaction.followup.send(view=layout, ephemeral=True)
 
 
 class EmbedBuilder(commands.Cog):
