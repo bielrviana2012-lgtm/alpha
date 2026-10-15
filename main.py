@@ -260,6 +260,7 @@ async def ajuda(interaction: discord.Interaction):
         ("🎮 Diversão e níveis", "`/quiz` `/ppt` `/perfil` `/level`"),
         ("✨ Inteligência Artificial", "`/perguntar` — assistente de IA do Sr.Alpha"),
         ("🚀 Atualizações", "`/anunciar_atualizacao` — anunciar novidades do bot"),
+        ("🧩 Administração", "`/criar_embed` — criar um painel personalizado com Components V2"),
     ]
 
     for titulo, conteudo in secoes:
