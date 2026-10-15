@@ -712,7 +712,25 @@ async def setup(bot: commands.Bot):
     cog = PingRoles(bot)
     await bot.add_cog(cog)
 
-    # Registra o botão persistente para sobreviver a reinicializações.
-    bot.add_view(PingPanelView(cog))
+    # Restaura os botões persistentes e migra os painéis antigos para V2.
+    with db_connect() as db:
+        panels = db.execute(
+            "SELECT guild_id, channel_id, message_id, title, description FROM ping_panels"
+        ).fetchall()
 
-    log.info("Sistema de pings do Sr.Alpha carregado.")
+    for guild_id, channel_id, message_id, title, description in panels:
+        view = PingPanelView(cog, title, description, len(get_pings(guild_id)))
+        bot.add_view(view, message_id=message_id)
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                continue
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.edit(embeds=[], view=view)
+        except discord.HTTPException:
+            log.exception("Não consegui atualizar o painel de pings %s.", message_id)
+
+    log.info("Sistema de pings do Sr.Alpha carregado com Components V2.")
