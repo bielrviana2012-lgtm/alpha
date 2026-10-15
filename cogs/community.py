@@ -1,7 +1,4 @@
 import logging
-import re
-from typing import Optional
-
 import aiosqlite
 import discord
 from discord import app_commands
@@ -15,61 +12,12 @@ PURPLE = discord.Color.from_rgb(145, 103, 255)
 
 
 # =========================================================
-# BANCO DE DADOS / MIGRAÇÕES
+# BANCO DE DADOS — SUGESTÕES
 # =========================================================
 
-async def _ensure_columns(db, table: str, columns: dict):
-    cursor = await db.execute(f"PRAGMA table_info({table})")
-    existing = {row[1] for row in await cursor.fetchall()}
-    for column, definition in columns.items():
-        if column not in existing:
-            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
-
 async def init_community_tables():
+    """Cria/atualiza somente as tabelas usadas pelo sistema de comunidade antigo."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""CREATE TABLE IF NOT EXISTS ticket_settings (
-            guild_id INTEGER PRIMARY KEY,
-            panel_channel_id INTEGER,
-            panel_message_id INTEGER,
-            panel_title TEXT NOT NULL DEFAULT 'Central de Atendimento',
-            panel_description TEXT NOT NULL DEFAULT 'Escolha uma categoria no menu abaixo.',
-            panel_color INTEGER NOT NULL DEFAULT 9533439,
-            panel_image TEXT NOT NULL DEFAULT '',
-            hours_text TEXT NOT NULL DEFAULT '',
-            notices_text TEXT NOT NULL DEFAULT '',
-            rating_channel_id INTEGER
-        )""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS ticket_categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            emoji TEXT NOT NULL DEFAULT '🎫',
-            description TEXT NOT NULL DEFAULT '',
-            staff_role_id INTEGER NOT NULL,
-            discord_category_id INTEGER,
-            welcome_text TEXT NOT NULL DEFAULT 'Explique como podemos ajudar.',
-            UNIQUE(guild_id, name)
-        )""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS ticket_records (
-            channel_id INTEGER PRIMARY KEY,
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            category_id INTEGER,
-            attendant_id INTEGER,
-            status TEXT NOT NULL DEFAULT 'open',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            closed_at TEXT,
-            rating INTEGER,
-            rating_comment TEXT,
-            rating_message_id INTEGER
-        )""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS tickets (
-            channel_id INTEGER PRIMARY KEY,
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'open'
-        )""")
         await db.execute("""CREATE TABLE IF NOT EXISTS alpha_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id INTEGER NOT NULL,
@@ -82,15 +30,67 @@ async def init_community_tables():
             response TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""")
-        await _ensure_columns(db, "ticket_settings", {
-            "panel_channel_id": "INTEGER", "panel_message_id": "INTEGER",
-            "panel_title": "TEXT NOT NULL DEFAULT 'Central de Atendimento'",
-            "panel_description": "TEXT NOT NULL DEFAULT 'Escolha uma categoria no menu abaixo.'",
-            "panel_color": "INTEGER NOT NULL DEFAULT 9533439",
-            "panel_image": "TEXT NOT NULL DEFAULT ''", "hours_text": "TEXT NOT NULL DEFAULT ''",
-            "notices_text": "TEXT NOT NULL DEFAULT ''", "rating_channel_id": "INTEGER",
-        })
-        await _ensure_columns(db, "ticket_categories", {
-            "emoji": "TEXT NOT NULL DEFAULT '🎫'", "description": "TEXT NOT NULL DEFAULT ''",
-            "staff_role_id": "INTEGER NOT NULL DEFAULT 0", "discord_category_id": "INTEGER",
-            "welcome_text": "TEXT NOT NULL DEFAULT 'Explique como podemos ajudar.'",
+        cursor = await db.execute("PRAGMA table_info(alpha_suggestions)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        additions = {
+            "guild_id": "INTEGER NOT NULL DEFAULT 0",
+            "user_id": "INTEGER NOT NULL DEFAULT 0",
+            "text": "TEXT NOT NULL DEFAULT ''",
+            "channel_id": "INTEGER NOT NULL DEFAULT 0",
+            "message_id": "INTEGER",
+            "status": "TEXT NOT NULL DEFAULT 'Pendente'",
+            "admin_id": "INTEGER",
+            "response": "TEXT NOT NULL DEFAULT ''",
+            "created_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                await db.execute(f"ALTER TABLE alpha_suggestions ADD COLUMN {name} {definition}")
+        await db.commit()
+    log.info("Tabelas antigas de comunidade/sugestões verificadas.")
+
+
+# =========================================================
+# EMBEDS E UTILITÁRIOS
+# =========================================================
+
+def make_embed(title: str, description: str = "", color=PURPLE):
+    embed = discord.Embed(title=title[:256], description=description[:4096], color=color)
+    embed.set_footer(text="Sr.Alpha • Family Alpha")
+    return embed
+
+
+class SuggestionView(discord.ui.View):
+    """Botões de apoio da mensagem de sugestão."""
+    def __init__(self, suggestion_id: int = 0):
+        super().__init__(timeout=None)
+        self.suggestion_id = suggestion_id
+
+    @discord.ui.button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success, custom_id="sr_alpha:suggestion_yes")
+    async def support(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.message.add_reaction("👍")
+        except discord.HTTPException:
+            log.exception("Não consegui adicionar reação de apoio.")
+        await interaction.response.send_message("👍 Obrigado por apoiar a sugestão!", ephemeral=True)
+
+    @discord.ui.button(label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary, custom_id="sr_alpha:suggestion_no")
+    async def oppose(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.message.add_reaction("👎")
+        except discord.HTTPException:
+            log.exception("Não consegui adicionar reação contrária.")
+        await interaction.response.send_message("👎 Seu voto foi registrado!", ephemeral=True)
+
+
+# =========================================================
+# COMANDOS ANTIGOS DA COMMUNITY — SEM SISTEMA DE TICKETS
+# =========================================================
+
+class Community(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        channel_id = int(getattr(config, "WELCOME_CHANNEL_ID", 0) or 0)
