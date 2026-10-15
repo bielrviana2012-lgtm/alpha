@@ -1,0 +1,46 @@
+name: Python validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/components-v2]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Compile Python files
+        run: python -m compileall -q .
+      - name: Import bot modules
+        env:
+          DISCORD_TOKEN: validation-token
+          GUILD_ID: "1536903015678873710"
+        run: |
+          python - <<'PY'
+          import importlib
+          modules = [
+              "main",
+              "cogs.ai_chat",
+              "cogs.color_roles",
+              "cogs.community",
+              "cogs.economy",
+              "cogs.fun",
+              "cogs.levels",
+              "cogs.moderation",
+              "cogs.ping_roles",
+              "cogs.premium",
+              "cogs.updates",
+          ]
+          for module in modules:
+              importlib.import_module(module)
+              print(f"OK: {module}")
+          PY
