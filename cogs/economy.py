@@ -6,6 +6,7 @@ from discord.ext import commands
 import aiosqlite
 from database import DB_PATH, get_user, ensure_user
 import config
+from cogs.ui_v2 import make_v2_panel
 
 SHOP = {"Caixa Misteriosa": 250, "Amuleto Alpha": 500, "Título VIP (cosmético)": 1000}
 
@@ -16,12 +17,16 @@ class Economy(commands.Cog):
     async def saldo(self, interaction: discord.Interaction, membro: discord.Member | None = None):
         target = membro or interaction.user
         row = await get_user(interaction.guild_id, target.id)
-        embed = discord.Embed(title=f"💰 Economia de {target.display_name}", color=discord.Color.gold())
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="👛 Carteira", value=f"{row['wallet']:,} {config.CURRENCY_NAME}")
-        embed.add_field(name="🏦 Banco", value=f"{row['bank']:,} {config.CURRENCY_NAME}")
-        embed.add_field(name="💎 Patrimônio", value=f"{row['wallet']+row['bank']:,} {config.CURRENCY_NAME}", inline=False)
-        await interaction.response.send_message(embed=embed)
+        panel = make_v2_panel(
+            f"💰 Economia de {target.display_name}",
+            f"Confira o patrimônio de {target.mention}.",
+            sections=[
+                ("👛 Carteira", f"{row['wallet']:,} {config.CURRENCY_NAME}"),
+                ("🏦 Banco", f"{row['bank']:,} {config.CURRENCY_NAME}"),
+                ("💎 Patrimônio total", f"{row['wallet']+row['bank']:,} {config.CURRENCY_NAME}"),
+            ],
+        )
+        await interaction.response.send_message(view=panel)
 
     @app_commands.command(name="setmoney", description="Define o saldo de um membro")
     @app_commands.describe(membro="Membro que receberá as moedas", valor="Novo saldo")
@@ -54,7 +59,10 @@ class Economy(commands.Cog):
         reward = random.randint(100, 250)
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE users SET wallet=wallet+?, last_daily=? WHERE guild_id=? AND user_id=?", (reward,today,interaction.guild_id,interaction.user.id)); await db.commit()
-        await interaction.response.send_message(embed=discord.Embed(description=f"🎁 Você recebeu **{reward} {config.CURRENCY_NAME}**!", color=discord.Color.green()))
+        await interaction.response.send_message(view=make_v2_panel(
+            "🎁 Recompensa diária recebida",
+            f"Você recebeu **{reward} {config.CURRENCY_NAME}**!",
+        ))
 
     @app_commands.command(name="trabalhar", description="Faça um trabalho e ganhe moedas (cooldown diário)")
     async def trabalhar(self, interaction: discord.Interaction):
@@ -98,12 +106,19 @@ class Economy(commands.Cog):
             cur = await db.execute("SELECT user_id, wallet+bank AS total FROM users WHERE guild_id=? ORDER BY total DESC LIMIT 10", (interaction.guild_id,)); rows = await cur.fetchall()
         if not rows: return await interaction.response.send_message("Ainda não há dados de economia.", ephemeral=True)
         lines = [f"**{i}.** <@{uid}> — {total:,} {config.CURRENCY_NAME}" for i,(uid,total) in enumerate(rows,1)]
-        await interaction.response.send_message(embed=discord.Embed(title="🏆 Ranking Alpha", description="\n".join(lines), color=discord.Color.gold()))
+        await interaction.response.send_message(view=make_v2_panel(
+            "🏆 Ranking Alpha",
+            "\n".join(lines),
+            footer=f"Sr.Alpha • Ranking dos 10 membros mais ricos",
+        ))
 
     @app_commands.command(name="loja", description="Veja os itens disponíveis na loja")
     async def loja(self, interaction: discord.Interaction):
         text = "\n".join(f"**{item}** — {price:,} {config.CURRENCY_NAME}" for item,price in SHOP.items())
-        await interaction.response.send_message(embed=discord.Embed(title="🛍️ Loja Alpha", description=text+"\n\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.", color=discord.Color.blurple()), ephemeral=True)
+        await interaction.response.send_message(view=make_v2_panel(
+            "🛍️ Loja Alpha",
+            text + "\n\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.",
+        ), ephemeral=True)
 
     @app_commands.command(name="comprar", description="Compre um item da loja")
     @app_commands.choices(item=[app_commands.Choice(name=k, value=k) for k in SHOP])
@@ -120,6 +135,9 @@ class Economy(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT item,quantity FROM inventory WHERE guild_id=? AND user_id=? AND quantity>0", (interaction.guild_id,interaction.user.id)); rows = await cur.fetchall()
         desc = "\n".join(f"• {name} × {qty}" for name,qty in rows) if rows else "Seu inventário está vazio. Visite `/loja`."
-        await interaction.response.send_message(embed=discord.Embed(title=f"🎒 Inventário de {interaction.user.display_name}", description=desc, color=discord.Color.blurple()), ephemeral=True)
+        await interaction.response.send_message(view=make_v2_panel(
+            f"🎒 Inventário de {interaction.user.display_name}",
+            desc,
+        ), ephemeral=True)
 
 async def setup(bot): await bot.add_cog(Economy(bot))

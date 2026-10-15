@@ -8,6 +8,7 @@ from discord.ext import commands
 from google import genai
 
 import config
+from cogs.ui_v2 import make_v2_panel
 
 log = logging.getLogger(__name__)
 
@@ -65,11 +66,7 @@ class AIChat(commands.Cog):
             resposta = resposta[:1900]
 
             await interaction.followup.send(
-                embed=discord.Embed(
-                    title="✨ Sr.Alpha AI",
-                    description=resposta,
-                    color=discord.Color.blurple(),
-                )
+                view=make_v2_panel("✨ Sr.Alpha AI", resposta)
             )
         except Exception:
             log.exception("Erro no comando /perguntar")

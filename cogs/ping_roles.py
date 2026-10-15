@@ -401,59 +401,57 @@ class PingSelectView(discord.ui.View):
 # BOTÃO DO PAINEL PÚBLICO
 # =========================================================
 
-class PingPanelView(discord.ui.View):
-    def __init__(self, cog):
+class PingPanelView(discord.ui.LayoutView):
+    def __init__(self, cog, title="Escolha seus pings",
+                 description="Selecione os cargos de notificações que deseja receber.",
+                 ping_count=0):
         super().__init__(timeout=None)
         self.cog = cog
+        panel = discord.ui.Container(accent_colour=PURPLE)
+        panel.add_item(discord.ui.TextDisplay(f"# 🔔・{title}"))
+        panel.add_item(discord.ui.TextDisplay(description))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(
+            f"**📢 Notificações disponíveis**\nHá **{ping_count}** cargos cadastrados."
+        ))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(
+            "**📌 Como usar**\nClique em **Selecionar seus pings** para abrir seu menu privado. "
+            "Use os botões para navegar entre as páginas."
+        ))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+        self.add_item(panel)
 
-    @discord.ui.button(
-        label="Selecionar seus pings",
-        style=discord.ButtonStyle.primary,
-        emoji="🔔",
-        custom_id="sr_alpha:open_ping_selector",
-    )
-    async def open_selector(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-        guild = interaction.guild
-
-        if guild is None or guild.id != TARGET_GUILD_ID:
-            await interaction.response.send_message(
-                "Este painel só funciona no servidor Family Alpha.",
-                ephemeral=True,
-            )
-            return
-
-        if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message(
-                "Não consegui identificar seu membro.",
-                ephemeral=True,
-            )
-            return
-
-        pings = get_pings(guild.id)
-        if not pings:
-            await interaction.response.send_message(
-                "Não existem pings cadastrados.",
-                ephemeral=True,
-            )
-            return
-
-        view = PingSelectView(
-            self.cog,
-            guild,
-            interaction.user,
+        row = discord.ui.ActionRow()
+        button = discord.ui.Button(
+            label="Selecionar seus pings", style=discord.ButtonStyle.primary,
+            emoji="🔔", custom_id="sr_alpha:open_ping_selector",
         )
+        button.callback = self.open_selector
+        row.add_item(button)
+        self.add_item(row)
 
+    async def open_selector(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        if guild is None or guild.id != TARGET_GUILD_ID:
+            return await interaction.response.send_message(
+                "Este painel só funciona no servidor Family Alpha.", ephemeral=True
+            )
+        if not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message(
+                "Não consegui identificar seu membro.", ephemeral=True
+            )
+        if not get_pings(guild.id):
+            return await interaction.response.send_message(
+                "Não existem pings cadastrados.", ephemeral=True
+            )
+        view = PingSelectView(self.cog, guild, interaction.user)
         await interaction.response.send_message(
             "🔔 **Personalize suas notificações**\n"
-            "Selecione os cargos que deseja receber. "
-            "Desmarque os cargos que não deseja mais.\n"
+            "Selecione os cargos que deseja receber. Desmarque os que não deseja mais. "
             "Use os botões para navegar pelas páginas.",
-            view=view,
-            ephemeral=True,
+            view=view, ephemeral=True,
         )
 
 
@@ -609,46 +607,28 @@ class PingRoles(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title="🔔 Cargos de ping cadastrados",
-            color=PURPLE,
-        )
-
+        layout = discord.ui.LayoutView(timeout=None)
+        panel = discord.ui.Container(accent_colour=PURPLE)
+        panel.add_item(discord.ui.TextDisplay("# 🔔 Cargos de ping cadastrados"))
         chunk = ""
         field_number = 1
-
         for name, role_id, emoji in pings:
             role = guild.get_role(role_id)
-            line = (
-                f"{emoji} **{name}** — {role.mention}\n"
-                if role else
-                f"{emoji} **{name}** — cargo não encontrado\n"
-            )
-
-            if len(chunk) + len(line) > 1000:
-                embed.add_field(
-                    name=f"Lista {field_number}",
-                    value=chunk,
-                    inline=False,
-                )
+            line = f"{emoji} **{name}** — {role.mention if role else 'cargo não encontrado'}"
+            if len(chunk) + len(line) > 3500:
+                panel.add_item(discord.ui.Separator())
+                panel.add_item(discord.ui.TextDisplay(f"**Lista {field_number}**\n{chunk}"))
                 field_number += 1
                 chunk = ""
-
-            chunk += line
-
+            chunk += line + "\n"
         if chunk:
-            embed.add_field(
-                name=f"Lista {field_number}",
-                value=chunk,
-                inline=False,
-            )
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**Lista {field_number}**\n{chunk}"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(f"-# Sr.Alpha • Total: {len(pings)} cargos"))
+        layout.add_item(panel)
+        await interaction.response.send_message(view=layout, ephemeral=True)
 
-        embed.set_footer(text=f"Sr.Alpha • Total: {len(pings)} cargos")
-
-        await interaction.response.send_message(
-            embed=embed,
-            ephemeral=True,
-        )
 
     @app_commands.command(
         name="painel_pings",
@@ -696,30 +676,10 @@ class PingRoles(commands.Cog):
             or "Selecione os cargos de notificações que deseja receber."
         )[:3500]
 
-        embed = discord.Embed(
-            title=f"🔔・{titulo}",
-            description=descricao,
-            color=PURPLE,
-        )
-        embed.add_field(
-            name="📢 Notificações disponíveis",
-            value=f"Há **{len(pings)}** cargos cadastrados.",
-            inline=False,
-        )
-        embed.add_field(
-            name="📌 Como usar",
-            value=(
-                "Clique em **Selecionar seus pings** para abrir seu menu "
-                "privado. Use os botões para navegar entre as páginas."
-            ),
-            inline=False,
-        )
-        embed.set_footer(text="Sr.Alpha • Family Alpha")
 
         try:
             message = await channel.send(
-                embed=embed,
-                view=PingPanelView(self),
+                view=PingPanelView(self, titulo, descricao, len(pings)),
             )
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -752,7 +712,25 @@ async def setup(bot: commands.Bot):
     cog = PingRoles(bot)
     await bot.add_cog(cog)
 
-    # Registra o botão persistente para sobreviver a reinicializações.
-    bot.add_view(PingPanelView(cog))
+    # Restaura os botões persistentes e migra os painéis antigos para V2.
+    with db_connect() as db:
+        panels = db.execute(
+            "SELECT guild_id, channel_id, message_id, title, description FROM ping_panels"
+        ).fetchall()
 
-    log.info("Sistema de pings do Sr.Alpha carregado.")
+    for guild_id, channel_id, message_id, title, description in panels:
+        view = PingPanelView(cog, title, description, len(get_pings(guild_id)))
+        bot.add_view(view, message_id=message_id)
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                continue
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.edit(embeds=[], view=view)
+        except discord.HTTPException:
+            log.exception("Não consegui atualizar o painel de pings %s.", message_id)
+
+    log.info("Sistema de pings do Sr.Alpha carregado com Components V2.")
