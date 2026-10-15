@@ -619,9 +619,18 @@ class Community(commands.Cog):
 
     # ----------------- Ticket administration -----------------
 
-    @app_commands.command(name="painel_tickets", description="Publica ou personaliza o painel de atendimento.")
+    @app_commands.command(name="painel_tickets", description="Publica o painel V2 e configura cada opção separadamente.")
     @app_commands.default_permissions(manage_channels=True)
     @app_commands.guild_only()
+    @app_commands.describe(
+        canal="Canal onde o painel será publicado",
+        titulo="Título principal do painel",
+        descricao="Texto de apresentação e instruções",
+        cor="Cor hexadecimal do painel, por exemplo #9167FF",
+        imagem_url="URL opcional de uma imagem para mostrar no painel",
+        horarios="Horários de atendimento (opcional)",
+        avisos="Avisos ou regras importantes (opcional)",
+    )
     async def painel_tickets(
         self,
         interaction: discord.Interaction,
@@ -662,7 +671,11 @@ class Community(commands.Cog):
             await db.execute("UPDATE ticket_settings SET panel_message_id=? WHERE guild_id=?", (message.id, guild.id))
             await db.commit()
         self.bot.add_view(TicketPanelView(guild.id, categories), message_id=message.id)
-        await interaction.followup.send(f"✅ Painel publicado em {canal.mention}. O botão “Meus Tickets” não foi incluído.", ephemeral=True)
+        await interaction.followup.send(
+            f"✅ Painel de tickets publicado em {canal.mention} usando Components V2. "
+            "Os membros podem selecionar uma categoria no menu.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="ticket_categoria_adicionar", description="Adiciona uma categoria personalizável ao menu de tickets.")
     @app_commands.default_permissions(manage_channels=True)
