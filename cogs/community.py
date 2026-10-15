@@ -259,21 +259,37 @@ class TicketPanelView(discord.ui.LayoutView):
 
 
 
-class TicketControlView(discord.ui.View):
-    def __init__(self):
+class TicketControlView(discord.ui.LayoutView):
+    def __init__(self, titulo: str = "🎫 Ticket de atendimento",
+                 descricao: str = "Use os controles abaixo para administrar este atendimento."):
         super().__init__(timeout=None)
+        panel = discord.ui.Container(accent_colour=PURPLE)
+        panel.add_item(discord.ui.TextDisplay(f"# {titulo}"))
+        panel.add_item(discord.ui.TextDisplay(descricao))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Atendimento"))
+        self.add_item(panel)
+        row = discord.ui.ActionRow()
+        claim_button = discord.ui.Button(label="Assumir atendimento", emoji="🧑‍💼",
+            style=discord.ButtonStyle.success, custom_id="alpha_ticket_claim")
+        close_button = discord.ui.Button(label="Fechar ticket", emoji="🔒",
+            style=discord.ButtonStyle.danger, custom_id="alpha_ticket_close_v2")
+        claim_button.callback = self.claim
+        close_button.callback = self.close
+        row.add_item(claim_button)
+        row.add_item(close_button)
+        self.add_item(row)
 
-    @discord.ui.button(label="Assumir atendimento", emoji="🧑‍💼", style=discord.ButtonStyle.success, custom_id="alpha_ticket_claim")
-    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def claim(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Use este botão no servidor.", ephemeral=True)
         record = await get_ticket_record(interaction.channel_id)
         if not record or record["status"] != "open":
             return await interaction.response.send_message("Este ticket não está aberto.", ephemeral=True)
         categories = await get_ticket_categories(interaction.guild.id)
-        category = next((c for c in categories if c["id"] == record["category_id"]), None)
+        category = next((item for item in categories if item["id"] == record["category_id"]), None)
         if not interaction.user.guild_permissions.manage_channels and (
-            not category or category["staff_role_id"] not in [r.id for r in interaction.user.roles]
+            not category or category["staff_role_id"] not in [role.id for role in interaction.user.roles]
         ):
             return await interaction.response.send_message("Somente a equipe responsável pode assumir este ticket.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
@@ -288,8 +304,7 @@ class TicketControlView(discord.ui.View):
         except discord.HTTPException:
             pass
 
-    @discord.ui.button(label="Fechar ticket", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="alpha_ticket_close_v2")
-    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def close(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("Community")
         if cog is None:
             return await interaction.response.send_message("O sistema de tickets está indisponível.", ephemeral=True)
@@ -494,18 +509,14 @@ class Community(commands.Cog):
             )
             await db.commit()
 
-        embed = discord.Embed(
-            title=f"{category['emoji']} {category['name']}",
-            description=category["welcome_text"] or "Explique como podemos ajudar.",
-            color=PURPLE,
+        ticket_description = (
+            f"{category['welcome_text'] or 'Explique como podemos ajudar.'}\n\n"
+            f"**👤 Solicitante:** {interaction.user.mention}\n"
+            f"**🛡️ Equipe responsável:** {staff_role.mention}"
         )
-        embed.add_field(name="👤 Solicitante", value=interaction.user.mention, inline=True)
-        embed.add_field(name="🛡️ Equipe responsável", value=staff_role.mention, inline=True)
-        embed.set_footer(text="Sr.Alpha • Central de Atendimento")
         await channel.send(
             content=f"{interaction.user.mention} {staff_role.mention}",
-            embed=embed,
-            view=TicketControlView(),
+            view=TicketControlView(f"{category['emoji']} {category['name']}", ticket_description),
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
         await interaction.response.send_message(f"🎫 Seu ticket foi criado: {channel.mention}", ephemeral=True)
