@@ -9,9 +9,9 @@ import config
 from database import init_db
 
 
-# ==========================================
+# =========================================================
 # LOGS
-# ==========================================
+# =========================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,9 +21,9 @@ logging.basicConfig(
 logger = logging.getLogger("Sr.Alpha")
 
 
-# ==========================================
+# =========================================================
 # MÓDULOS DO BOT
-# ==========================================
+# =========================================================
 
 EXTENSIONS = (
     "cogs.economy",
@@ -39,42 +39,73 @@ EXTENSIONS = (
 )
 
 
-# ==========================================
+# =========================================================
 # BOT PRINCIPAL
-# ==========================================
+# =========================================================
 
 class AlphaBot(commands.Bot):
 
     async def setup_hook(self):
-        await init_db()
-        logger.info("Banco de dados inicializado.")
+        # Inicializa o banco de dados.
+        try:
+            await init_db()
+            logger.info("Banco de dados inicializado.")
+        except Exception:
+            logger.exception("Falha ao inicializar o banco de dados.")
+            raise
 
-        # Carrega todos os módulos antes de sincronizar.
+        # Carrega cada módulo individualmente.
+        loaded_extensions = []
+        failed_extensions = []
+
+        logger.info("Iniciando carregamento dos módulos...")
+
         for extension in EXTENSIONS:
             try:
                 await self.load_extension(extension)
+
+                loaded_extensions.append(extension)
                 logger.info("Módulo carregado: %s", extension)
 
-            except Exception:
-                logger.exception(
-                    "Falha ao carregar o módulo: %s",
+            except Exception as error:
+                failed_extensions.append(extension)
+
+                logger.error(
+                    "Falha ao carregar o módulo: %s | Erro: %s",
                     extension,
+                    error,
+                    exc_info=True,
                 )
 
-        # Sincroniza os comandos no servidor configurado.
+        # Resumo do carregamento.
+        logger.info(
+            "Resumo dos módulos: %s carregados, %s com falha.",
+            len(loaded_extensions),
+            len(failed_extensions),
+        )
+
+        if failed_extensions:
+            logger.error(
+                "Módulos que falharam: %s",
+                ", ".join(failed_extensions),
+            )
+        else:
+            logger.info("Todos os módulos foram carregados.")
+
+        # Sincroniza os comandos com o servidor.
         try:
             guild_id = int(getattr(config, "GUILD_ID", 0) or 0)
 
             if guild_id <= 0:
                 logger.error(
-                    "GUILD_ID não configurado. "
+                    "GUILD_ID inválido ou não configurado. "
                     "Configure o ID do servidor Family Alpha no Railway."
                 )
                 return
 
             guild = discord.Object(id=guild_id)
 
-            # Copia os comandos globais para o servidor.
+            # Disponibiliza os comandos globais no servidor escolhido.
             self.tree.copy_global_to(guild=guild)
 
             synced = await self.tree.sync(guild=guild)
@@ -88,17 +119,24 @@ class AlphaBot(commands.Bot):
             )
 
             logger.info(
-                "Lista de comandos sincronizados: %s",
-                ", ".join(command_names) or "Nenhum comando",
+                "Comandos disponíveis: %s",
+                ", ".join(command_names) or "Nenhum",
             )
 
+            # Verifica comandos importantes.
             expected_commands = {
+                "ajuda",
                 "painel_tickets",
                 "ticket_configurar",
                 "ticket_categoria_adicionar",
                 "ticket_categoria_remover",
                 "sugerir",
                 "status_sugestao",
+                "painel_pings",
+                "adicionar_ping",
+                "remover_ping",
+                "listar_pings",
+                "painel_cores",
             }
 
             missing = expected_commands - set(command_names)
@@ -108,9 +146,13 @@ class AlphaBot(commands.Bot):
                     "Comandos esperados ausentes: %s",
                     ", ".join(sorted(missing)),
                 )
+                logger.warning(
+                    "Verifique se os módulos responsáveis foram carregados "
+                    "e se os comandos estão definidos neles."
+                )
             else:
                 logger.info(
-                    "Comandos principais de tickets e sugestões encontrados."
+                    "Todos os comandos principais foram encontrados."
                 )
 
         except Exception:
@@ -119,9 +161,9 @@ class AlphaBot(commands.Bot):
             )
 
 
-# ==========================================
+# =========================================================
 # INTENTS E CONFIGURAÇÃO
-# ==========================================
+# =========================================================
 
 intents = discord.Intents.default()
 intents.members = True
@@ -134,9 +176,9 @@ bot = AlphaBot(
 )
 
 
-# ==========================================
+# =========================================================
 # EVENTO: BOT CONECTADO
-# ==========================================
+# =========================================================
 
 @bot.event
 async def on_ready():
@@ -146,17 +188,22 @@ async def on_ready():
         bot.user.id if bot.user else "desconhecido",
     )
 
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="a comunidade Alpha",
+    try:
+        await bot.change_presence(
+            activity=discord.Activity(
+                type=discord.ActivityType.watching,
+                name="a comunidade Alpha",
+            )
         )
-    )
+        logger.info("Presença do Sr.Alpha atualizada.")
+
+    except discord.HTTPException:
+        logger.exception("Não foi possível atualizar a presença.")
 
 
-# ==========================================
+# =========================================================
 # COMANDO /AJUDA
-# ==========================================
+# =========================================================
 
 @bot.tree.command(
     name="ajuda",
@@ -244,9 +291,9 @@ async def ajuda(interaction: discord.Interaction):
     )
 
 
-# ==========================================
+# =========================================================
 # TRATAMENTO DE ERROS DOS COMANDOS
-# ==========================================
+# =========================================================
 
 @bot.tree.error
 async def on_app_command_error(
@@ -277,6 +324,9 @@ async def on_app_command_error(
             "antes de tentar novamente."
         )
 
+    elif isinstance(error, app_commands.CheckFailure):
+        message = "⛔ Você não pode usar este comando neste contexto."
+
     else:
         message = (
             "❌ Ocorreu um erro ao executar o comando. "
@@ -301,17 +351,19 @@ async def on_app_command_error(
         )
 
 
-# ==========================================
+# =========================================================
 # INICIALIZAÇÃO
-# ==========================================
+# =========================================================
 
 if __name__ == "__main__":
-    if not config.DISCORD_TOKEN:
+    token = getattr(config, "DISCORD_TOKEN", None)
+
+    if not token:
         raise SystemExit(
             "ERRO: configure DISCORD_TOKEN nas variáveis do Railway."
         )
 
     bot.run(
-        config.DISCORD_TOKEN,
+        token,
         log_handler=None,
     )
