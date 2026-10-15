@@ -202,7 +202,7 @@ async def on_ready():
 
 
 # =========================================================
-# COMANDO /AJUDA
+# COMANDO /AJUDA — COMPONENTS V2
 # =========================================================
 
 @bot.tree.command(
@@ -210,83 +210,62 @@ async def on_ready():
     description="Mostra os sistemas do Sr.Alpha",
 )
 async def ajuda(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🤖 Sr.Alpha | Central de ajuda",
-        description=(
-            "Seu bot geral para a comunidade Family Alpha.\n\n"
-            "Confira abaixo os sistemas disponíveis."
-        ),
-        color=discord.Color.from_rgb(145, 103, 255),
-    )
+    # Components V2 substitui embeds por componentes de layout.
+    layout = discord.ui.LayoutView(timeout=None)
+    painel = discord.ui.Container()
 
-    embed.add_field(
-        name="💰 Economia",
-        value=(
+    painel.add_item(discord.ui.TextDisplay(
+        "# 🤖 Sr.Alpha | Central de ajuda\n"
+        "Seu bot geral para a comunidade Family Alpha.\n"
+        "Confira abaixo os sistemas disponíveis."
+    ))
+    painel.add_item(discord.ui.Separator())
+
+    secoes = [
+        (
+            "💰 Economia",
             "`/saldo` `/daily` `/trabalhar` `/depositar`\n"
-            "`/sacar` `/transferir` `/ranking` `/loja` `/comprar`"
+            "`/sacar` `/transferir` `/ranking` `/loja` `/comprar`",
         ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="🛡️ Moderação",
-        value=(
+        (
+            "🛡️ Moderação",
             "`/aviso` `/avisos` `/limpar` `/timeout`\n"
-            "`/expulsar` `/banir`"
+            "`/expulsar` `/banir`",
         ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="💬 Comunidade e tickets",
-        value=(
+        (
+            "💬 Comunidade e tickets",
             "`/sugerir` — enviar sugestão\n"
             "`/status_sugestao` — atualizar uma sugestão\n"
             "`/ticket` — publicar painel de atendimento\n"
             "`/painel_tickets` — publicar painel de tickets\n"
             "`/ticket_configurar` — personalizar o painel\n"
             "`/ticket_categoria_adicionar` — criar categoria\n"
-            "`/ticket_categoria_remover` — remover categoria"
+            "`/ticket_categoria_remover` — remover categoria",
         ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="🎨 Cargos e notificações",
-        value=(
+        (
+            "🎨 Cargos e notificações",
             "`/painel_cores` — painel de cores\n"
             "`/painel_pings` — painel de notificações\n"
             "`/adicionar_ping` — cadastrar opção de ping\n"
             "`/remover_ping` — remover opção de ping\n"
-            "`/listar_pings` — listar opções cadastradas"
+            "`/listar_pings` — listar opções cadastradas",
         ),
-        inline=False,
-    )
+        ("🎮 Diversão e níveis", "`/quiz` `/ppt` `/perfil` `/level`"),
+        ("✨ Inteligência Artificial", "`/perguntar` — assistente de IA do Sr.Alpha"),
+        ("🚀 Atualizações", "`/anunciar_atualizacao` — anunciar novidades do bot"),
+    ]
 
-    embed.add_field(
-        name="🎮 Diversão e níveis",
-        value="`/quiz` `/ppt` `/perfil` `/level`",
-        inline=False,
-    )
+    for titulo, conteudo in secoes:
+        painel.add_item(discord.ui.TextDisplay(f"**{titulo}**\n{conteudo}"))
+        painel.add_item(discord.ui.Separator())
 
-    embed.add_field(
-        name="✨ Inteligência Artificial",
-        value="`/perguntar` — assistente de IA do Sr.Alpha",
-        inline=False,
-    )
-
-    embed.add_field(
-        name="🚀 Atualizações",
-        value="`/anunciar_atualizacao` — anunciar novidades do bot",
-        inline=False,
-    )
-
-    embed.set_footer(
-        text="Sr.Alpha • Family Alpha | Alguns comandos exigem permissões."
-    )
+    painel.add_item(discord.ui.TextDisplay(
+        "-# Sr.Alpha • Family Alpha | Alguns comandos exigem permissões."
+    ))
+    layout.add_item(painel)
 
     await interaction.response.send_message(
-        embed=embed,
+        view=layout,
         ephemeral=True,
     )
 
