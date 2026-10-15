@@ -46,11 +46,10 @@ EXTENSIONS = (
 class AlphaBot(commands.Bot):
 
     async def setup_hook(self):
-        # Inicializa o banco de dados
         await init_db()
         logger.info("Banco de dados inicializado.")
 
-        # Carrega os módulos
+        # Carrega todos os módulos antes de sincronizar.
         for extension in EXTENSIONS:
             try:
                 await self.load_extension(extension)
@@ -62,39 +61,57 @@ class AlphaBot(commands.Bot):
                     extension,
                 )
 
-        # Sincroniza os comandos slash
+        # Sincroniza os comandos no servidor configurado.
         try:
-            guild_id = int(
-                getattr(config, "GUILD_ID", 0) or 0
-            )
+            guild_id = int(getattr(config, "GUILD_ID", 0) or 0)
 
-            if guild_id > 0:
-                guild = discord.Object(id=guild_id)
-
-                # Copia os comandos globais para o servidor
-                self.tree.copy_global_to(guild=guild)
-
-                synced = await self.tree.sync(guild=guild)
-
-                logger.info(
-                    "Comandos sincronizados no servidor %s: %s",
-                    guild_id,
-                    len(synced),
+            if guild_id <= 0:
+                logger.error(
+                    "GUILD_ID não configurado. "
+                    "Configure o ID do servidor Family Alpha no Railway."
                 )
+                return
 
-            else:
-                synced = await self.tree.sync()
+            guild = discord.Object(id=guild_id)
 
-                logger.info(
-                    "Comandos globais sincronizados: %s",
-                    len(synced),
-                )
+            # Copia os comandos globais para o servidor.
+            self.tree.copy_global_to(guild=guild)
+
+            synced = await self.tree.sync(guild=guild)
+
+            command_names = sorted(command.name for command in synced)
 
             logger.info(
-                "Comandos disponíveis: %s",
-                ", ".join(command.name for command in synced)
-                or "Nenhum comando registrado",
+                "Comandos sincronizados no servidor %s: %s",
+                guild_id,
+                len(synced),
             )
+
+            logger.info(
+                "Lista de comandos sincronizados: %s",
+                ", ".join(command_names) or "Nenhum comando",
+            )
+
+            expected_commands = {
+                "painel_tickets",
+                "ticket_configurar",
+                "ticket_categoria_adicionar",
+                "ticket_categoria_remover",
+                "sugerir",
+                "status_sugestao",
+            }
+
+            missing = expected_commands - set(command_names)
+
+            if missing:
+                logger.warning(
+                    "Comandos esperados ausentes: %s",
+                    ", ".join(sorted(missing)),
+                )
+            else:
+                logger.info(
+                    "Comandos principais de tickets e sugestões encontrados."
+                )
 
         except Exception:
             logger.exception(
@@ -158,9 +175,9 @@ async def ajuda(interaction: discord.Interaction):
     embed.add_field(
         name="💰 Economia",
         value=(
-            "`/saldo` ` /daily` `/trabalhar` `/depositar`\n"
+            "`/saldo` `/daily` `/trabalhar` `/depositar`\n"
             "`/sacar` `/transferir` `/ranking` `/loja` `/comprar`"
-        ).replace("` /daily`", "`/daily`"),
+        ),
         inline=False,
     )
 
@@ -174,10 +191,15 @@ async def ajuda(interaction: discord.Interaction):
     )
 
     embed.add_field(
-        name="💬 Comunidade",
+        name="💬 Comunidade e tickets",
         value=(
-            "`/sugerir` `/status_sugestao` `/ticket`\n"
-            "`/fechar_ticket`"
+            "`/sugerir` — enviar sugestão\n"
+            "`/status_sugestao` — atualizar uma sugestão\n"
+            "`/ticket` — publicar painel de atendimento\n"
+            "`/painel_tickets` — publicar painel de tickets\n"
+            "`/ticket_configurar` — personalizar o painel\n"
+            "`/ticket_categoria_adicionar` — criar categoria\n"
+            "`/ticket_categoria_remover` — remover categoria"
         ),
         inline=False,
     )
@@ -208,9 +230,7 @@ async def ajuda(interaction: discord.Interaction):
 
     embed.add_field(
         name="🚀 Atualizações",
-        value=(
-            "`/anunciar_atualizacao` — anunciar novidades do bot"
-        ),
+        value="`/anunciar_atualizacao` — anunciar novidades do bot",
         inline=False,
     )
 
@@ -276,7 +296,9 @@ async def on_app_command_error(
             )
 
     except discord.HTTPException:
-        logger.exception("Não foi possível enviar a mensagem de erro.")
+        logger.exception(
+            "Não foi possível enviar a mensagem de erro."
+        )
 
 
 # ==========================================
