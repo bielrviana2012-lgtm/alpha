@@ -9,10 +9,19 @@ from discord.ext import commands
 
 from database import DB_PATH
 
+
 log = logging.getLogger("Sr.Alpha.PingRoles")
+
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 TARGET_GUILD_ID = 1536903015678873710
-OPTIONS_PER_PAGE = 25  # Limite do Discord por menu, não limite total de pings.
+
+# Limite de opções por menu do Discord, não limite total de pings.
+OPTIONS_PER_PAGE = 25
+
+
+async def setup(bot):
+    init_tables()
+    await bot.add_cog(PingRoles(bot))
 
 
 def db_connect():
