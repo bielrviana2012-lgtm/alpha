@@ -11,12 +11,7 @@ log = logging.getLogger("Sr.Alpha.Community")
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 
 
-# =========================================================
-# BANCO DE DADOS — SUGESTÕES
-# =========================================================
-
 async def init_community_tables():
-    """Cria/atualiza somente as tabelas usadas pelo sistema de comunidade antigo."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""CREATE TABLE IF NOT EXISTS alpha_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,49 +28,72 @@ async def init_community_tables():
         cursor = await db.execute("PRAGMA table_info(alpha_suggestions)")
         columns = {row[1] for row in await cursor.fetchall()}
         additions = {
-            "guild_id": "INTEGER NOT NULL DEFAULT 0",
-            "user_id": "INTEGER NOT NULL DEFAULT 0",
-            "text": "TEXT NOT NULL DEFAULT ''",
-            "channel_id": "INTEGER NOT NULL DEFAULT 0",
-            "message_id": "INTEGER",
-            "status": "TEXT NOT NULL DEFAULT 'Pendente'",
-            "admin_id": "INTEGER",
-            "response": "TEXT NOT NULL DEFAULT ''",
+            "guild_id": "INTEGER NOT NULL DEFAULT 0", "user_id": "INTEGER NOT NULL DEFAULT 0",
+            "text": "TEXT NOT NULL DEFAULT ''", "channel_id": "INTEGER NOT NULL DEFAULT 0",
+            "message_id": "INTEGER", "status": "TEXT NOT NULL DEFAULT 'Pendente'",
+            "admin_id": "INTEGER", "response": "TEXT NOT NULL DEFAULT ''",
             "created_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
         }
         for name, definition in additions.items():
             if name not in columns:
                 await db.execute(f"ALTER TABLE alpha_suggestions ADD COLUMN {name} {definition}")
         await db.commit()
-    log.info("Tabelas antigas de comunidade/sugestões verificadas.")
+    log.info("Tabelas de sugestões verificadas.")
 
 
-# =========================================================
-# EMBEDS E UTILITÁRIOS
-# =========================================================
-
-def make_embed(title: str, description: str = "", color=PURPLE):
-    embed = discord.Embed(title=title[:256], description=description[:4096], color=color)
-    embed.set_footer(text="Sr.Alpha • Family Alpha")
-    return embed
+def suggestion_view(
+    suggestion_id: int, texto: str, autor_id: int, status: str = "Pendente",
+    admin_id: int | None = None, response: str = "",
+) -> discord.ui.LayoutView:
+    view = SuggestionLayoutView(suggestion_id, texto, autor_id, status, admin_id, response)
+    return view
 
 
-class SuggestionView(discord.ui.View):
-    """Botões de apoio da mensagem de sugestão."""
-    def __init__(self, suggestion_id: int = 0):
+class SuggestionLayoutView(discord.ui.LayoutView):
+    def __init__(
+        self, suggestion_id: int, texto: str, autor_id: int, status: str = "Pendente",
+        admin_id: int | None = None, response: str = "",
+    ):
         super().__init__(timeout=None)
         self.suggestion_id = suggestion_id
+        container = discord.ui.Container(accent_colour=PURPLE)
+        container.add_item(discord.ui.TextDisplay("# 💡 Nova sugestão"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(texto[:4000]))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(
+            f"**Autor**\n<@{autor_id}>\n\n**📌 Status**\n{status_emoji(status)} {status}\n\n"
+            f"**👍 Apoio**\nUse os botões abaixo para votar.\n\n**Protocolo**\n`#{suggestion_id}`"
+        ))
+        if admin_id:
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.TextDisplay(
+                f"**🛡️ Decisão da equipe**\nResponsável: <@{admin_id}>\nResultado: {status}"
+            ))
+        if response:
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.TextDisplay(f"**💬 Resposta da equipe**\n{response[:1000]}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Sistema de sugestões"))
+        self.add_item(container)
 
-    @discord.ui.button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success, custom_id="sr_alpha:suggestion_yes")
-    async def support(self, interaction: discord.Interaction, button: discord.ui.Button):
+        yes = discord.ui.Button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success,
+                                custom_id=f"sr_alpha:suggestion_yes:{suggestion_id}")
+        no = discord.ui.Button(label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary,
+                               custom_id=f"sr_alpha:suggestion_no:{suggestion_id}")
+        yes.callback = self.support
+        no.callback = self.oppose
+        self.add_item(yes)
+        self.add_item(no)
+
+    async def support(self, interaction: discord.Interaction):
         try:
             await interaction.message.add_reaction("👍")
         except discord.HTTPException:
             log.exception("Não consegui adicionar reação de apoio.")
         await interaction.response.send_message("👍 Obrigado por apoiar a sugestão!", ephemeral=True)
 
-    @discord.ui.button(label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary, custom_id="sr_alpha:suggestion_no")
-    async def oppose(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def oppose(self, interaction: discord.Interaction):
         try:
             await interaction.message.add_reaction("👎")
         except discord.HTTPException:
@@ -83,9 +101,9 @@ class SuggestionView(discord.ui.View):
         await interaction.response.send_message("👎 Seu voto foi registrado!", ephemeral=True)
 
 
-# =========================================================
-# COMANDOS ANTIGOS DA COMMUNITY — SEM SISTEMA DE TICKETS
-# =========================================================
+def status_emoji(status: str) -> str:
+    return {"Aprovada": "🟢", "Recusada": "🔴", "Em análise": "🟡", "Pendente": "🟡"}.get(status, "⚪")
+
 
 class Community(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -96,11 +114,16 @@ class Community(commands.Cog):
         channel_id = int(getattr(config, "WELCOME_CHANNEL_ID", 0) or 0)
         channel = member.guild.get_channel(channel_id) if channel_id else None
         if isinstance(channel, discord.TextChannel):
+            layout = discord.ui.LayoutView(timeout=None)
+            panel = discord.ui.Container(accent_colour=PURPLE)
+            panel.add_item(discord.ui.TextDisplay("# 👋 Boas-vindas à Family Alpha!"))
+            panel.add_item(discord.ui.TextDisplay(
+                f"Seja bem-vindo(a), {member.mention}! Leia as regras e aproveite a comunidade."
+            ))
+            panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+            layout.add_item(panel)
             try:
-                await channel.send(embed=make_embed(
-                    "👋 Boas-vindas à Family Alpha!",
-                    f"Seja bem-vindo(a), {member.mention}! Leia as regras e aproveite a comunidade.",
-                ))
+                await channel.send(view=layout)
             except discord.HTTPException:
                 log.exception("Não consegui enviar boas-vindas para %s.", member.id)
 
@@ -120,13 +143,6 @@ class Community(commands.Cog):
                 ephemeral=True,
             )
 
-        embed = make_embed("💡 Nova sugestão", texto)
-        embed.add_field(name="Autor", value=f"{interaction.user.mention}\n`{interaction.user}`", inline=False)
-        embed.add_field(name="📌 Status", value="🟡 Pendente", inline=True)
-        embed.add_field(name="👍 Apoio", value="0", inline=True)
-        embed.add_field(name="👎 Não apoio", value="0", inline=True)
-        embed.set_footer(text="Sr.Alpha • Sistema de sugestões")
-
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -137,13 +153,9 @@ class Community(commands.Cog):
                 suggestion_id = cursor.lastrowid
                 await db.commit()
 
-            embed.add_field(name="Protocolo", value=f"`#{suggestion_id}`", inline=True)
-            message = await channel.send(embed=embed, view=SuggestionView(suggestion_id))
+            message = await channel.send(view=suggestion_view(suggestion_id, texto, interaction.user.id))
             async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE alpha_suggestions SET message_id=? WHERE id=?",
-                    (message.id, suggestion_id),
-                )
+                await db.execute("UPDATE alpha_suggestions SET message_id=? WHERE id=?", (message.id, suggestion_id))
                 await db.commit()
         except Exception:
             log.exception("Não consegui publicar/salvar a sugestão.")
@@ -165,11 +177,8 @@ class Community(commands.Cog):
         app_commands.Choice(name="Recusada", value="Recusada"),
     ])
     async def status_sugestao(
-        self,
-        interaction: discord.Interaction,
-        numero: app_commands.Range[int, 1, 1000000],
-        status: app_commands.Choice[str],
-        resposta: str = "",
+        self, interaction: discord.Interaction, numero: app_commands.Range[int, 1, 1000000],
+        status: app_commands.Choice[str], resposta: str = "",
     ):
         if not interaction.user.guild_permissions.manage_messages:
             return await interaction.response.send_message(
@@ -178,13 +187,13 @@ class Community(commands.Cog):
 
         async with aiosqlite.connect(DB_PATH) as db:
             cursor = await db.execute(
-                "SELECT message_id, channel_id FROM alpha_suggestions WHERE id=? AND guild_id=?",
+                "SELECT message_id, channel_id, text, user_id FROM alpha_suggestions WHERE id=? AND guild_id=?",
                 (numero, interaction.guild_id),
             )
             row = await cursor.fetchone()
             if not row:
                 return await interaction.response.send_message("Sugestão não encontrada.", ephemeral=True)
-            message_id, channel_id = row
+            message_id, channel_id, texto, autor_id = row
             await db.execute(
                 "UPDATE alpha_suggestions SET status=?, admin_id=?, response=? WHERE id=? AND guild_id=?",
                 (status.value, interaction.user.id, resposta.strip()[:1024], numero, interaction.guild_id),
@@ -196,48 +205,18 @@ class Community(commands.Cog):
             try:
                 channel = await self.bot.fetch_channel(channel_id)
             except discord.HTTPException:
-                return await interaction.response.send_message(
-                    "O canal da sugestão não está acessível ao bot.", ephemeral=True
-                )
+                return await interaction.response.send_message("O canal da sugestão não está acessível ao bot.", ephemeral=True)
         try:
             message = await channel.fetch_message(message_id)
         except (discord.HTTPException, AttributeError):
-            return await interaction.response.send_message(
-                "Não consegui encontrar a mensagem da sugestão.", ephemeral=True
-            )
-        if not message.embeds:
-            return await interaction.response.send_message(
-                "A mensagem da sugestão não contém um embed editável.", ephemeral=True
-            )
-
-        embed = message.embeds[0]
-        emoji = {"Aprovada": "🟢", "Recusada": "🔴", "Em análise": "🟡"}[status.value]
-        status_text = f"{emoji} {status.value}"
-        index = next((i for i, field in enumerate(embed.fields) if field.name in ("📌 Status", "Estado")), None)
-        if index is None:
-            embed.add_field(name="📌 Status", value=status_text, inline=True)
-        else:
-            embed.set_field_at(index, name="📌 Status", value=status_text, inline=True)
-
-        decision = f"**Responsável:** {interaction.user.mention}\n**Resultado:** {status.value}"
-        index = next((i for i, field in enumerate(embed.fields) if field.name == "🛡️ Decisão da equipe"), None)
-        if index is None:
-            embed.add_field(name="🛡️ Decisão da equipe", value=decision, inline=False)
-        else:
-            embed.set_field_at(index, name="🛡️ Decisão da equipe", value=decision, inline=False)
-
-        response = resposta.strip()[:1024]
-        index = next((i for i, field in enumerate(embed.fields) if field.name == "💬 Resposta da equipe"), None)
-        if response:
-            if index is None:
-                embed.add_field(name="💬 Resposta da equipe", value=response, inline=False)
-            else:
-                embed.set_field_at(index, name="💬 Resposta da equipe", value=response, inline=False)
+            return await interaction.response.send_message("Não consegui encontrar a mensagem da sugestão.", ephemeral=True)
 
         try:
-            await message.edit(embed=embed, view=SuggestionView(numero))
+            await message.edit(view=suggestion_view(
+                numero, texto, autor_id, status.value, interaction.user.id, resposta.strip()[:1024]
+            ))
         except discord.HTTPException:
-            log.exception("Não consegui atualizar o embed da sugestão #%s.", numero)
+            log.exception("Não consegui atualizar a sugestão #%s.", numero)
             return await interaction.response.send_message(
                 "Não consegui editar a mensagem no Discord. Confira as permissões do bot.", ephemeral=True
             )
@@ -251,5 +230,4 @@ class Community(commands.Cog):
 async def setup(bot: commands.Bot):
     await init_community_tables()
     await bot.add_cog(Community(bot))
-    bot.add_view(SuggestionView())
-    log.info("Módulo de comunidade antigo carregado (boas-vindas e sugestões; sem tickets).")
+    log.info("Módulo de comunidade carregado com Components V2.")
