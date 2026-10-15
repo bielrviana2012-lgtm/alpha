@@ -445,15 +445,29 @@ class Community(commands.Cog):
         await init_community_tables()
         # Register persistent views for existing panels and open tickets.
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute("SELECT guild_id, panel_message_id FROM ticket_settings WHERE panel_message_id IS NOT NULL")
+            cur = await db.execute("SELECT guild_id, panel_channel_id, panel_message_id FROM ticket_settings WHERE panel_message_id IS NOT NULL")
             panels = await cur.fetchall()
             cur = await db.execute("SELECT channel_id FROM ticket_records WHERE status='open'")
             open_tickets = await cur.fetchall()
             cur = await db.execute("SELECT channel_id FROM ticket_records WHERE status='closed' AND rating IS NULL")
             awaiting_ratings = await cur.fetchall()
-        for guild_id, message_id in panels:
+        for guild_id, channel_id, message_id in panels:
             categories = await get_ticket_categories(guild_id)
-            self.bot.add_view(TicketPanelView(guild_id, categories), message_id=message_id)
+            settings = await get_ticket_settings(guild_id)
+            view = TicketPanelView(guild_id, categories, settings)
+            self.bot.add_view(view, message_id=message_id)
+            channel = self.bot.get_channel(channel_id) if channel_id else None
+            if channel is None and channel_id:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except discord.HTTPException:
+                    channel = None
+            if channel is not None:
+                try:
+                    message = await channel.fetch_message(message_id)
+                    await message.edit(embeds=[], view=view)
+                except discord.HTTPException:
+                    log.exception("Não consegui migrar o painel de tickets %s para V2.", message_id)
         for (channel_id,) in open_tickets:
             self.bot.add_view(TicketControlView(), message_id=None)
         for (channel_id,) in awaiting_ratings:
@@ -473,7 +487,7 @@ class Community(commands.Cog):
             message = await channel.fetch_message(settings["panel_message_id"])
             categories = await get_ticket_categories(guild.id)
             await message.edit(embeds=[], view=TicketPanelView(guild.id, categories, settings))
-            self.bot.add_view(TicketPanelView(guild.id, categories), message_id=message.id)
+            self.bot.add_view(TicketPanelView(guild.id, categories, settings), message_id=message.id)
         except discord.HTTPException:
             log.exception("Não foi possível atualizar o painel de tickets.")
 
@@ -839,7 +853,7 @@ class Community(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE ticket_settings SET panel_channel_id=?,panel_message_id=? WHERE guild_id=?", (canal.id, message.id, interaction.guild_id))
             await db.commit()
-        self.bot.add_view(TicketPanelView(interaction.guild_id, categories), message_id=message.id)
+        self.bot.add_view(TicketPanelView(interaction.guild_id, categories, settings), message_id=message.id)
         await interaction.followup.send(f"✅ Painel de tickets publicado em {canal.mention}.", ephemeral=True)
 
     @app_commands.command(name="fechar_ticket", description="Feche o ticket atual")
