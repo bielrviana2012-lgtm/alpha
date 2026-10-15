@@ -81,16 +81,52 @@ def normalise_name(value: str) -> str:
     return "".join(ch for ch in value if ch.isalnum())
 
 
+
 def resolve_server_emoji(guild: discord.Guild, value: str | None, label: str):
-    """Resolve server custom emoji by markup, ID, or name; allow Unicode as fallback."""
+    """Encontra emojis personalizados do servidor ou aceita emoji Unicode."""
     value = (value or "").strip()
+
     if value:
-        match = re.fullmatch(r"<a?:(?P<name>[A-Za-z0-9_]{2,32}):(?P<id>\d{15,22})>", value)
-        raw_id = match.group("id") if match else (value if value.isdigit() else None)
+        match = re.fullmatch(
+            r"<a?:(?P<name>[A-Za-z0-9_]{2,32}):(?P<id>\d{15,22})>",
+            value,
+        )
+
+        raw_id = match.group("id") if match else (
+            value if value.isdigit() else None
+        )
+
         if raw_id:
             found = discord.utils.get(guild.emojis, id=int(raw_id))
             return str(found) if found else None
+
         by_name = discord.utils.get(guild.emojis, name=value.strip(":"))
         if by_name:
             return str(by_name)
-        if value.startswith("<:") or value.startswith("<a:") or value.startswith("<"):
+
+        if value.startswith("<"):
+            return None
+
+        return value
+
+    wanted = normalise_name(label)
+
+    if wanted:
+        exact = next(
+            (emoji for emoji in guild.emojis
+             if normalise_name(emoji.name) == wanted),
+            None,
+        )
+        if exact:
+            return str(exact)
+
+        partial = next(
+            (emoji for emoji in guild.emojis
+             if normalise_name(emoji.name) in wanted
+             or wanted in normalise_name(emoji.name)),
+            None,
+        )
+        if partial:
+            return str(partial)
+
+    return str(guild.emojis[0]) if guild.emojis else "🔔"
