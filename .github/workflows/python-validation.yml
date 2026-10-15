@@ -51,12 +51,22 @@ jobs:
           GUILD_ID: "1536903015678873710"
         run: |
           python - <<'PY'
+          import asyncio
           import discord
-          from cogs.community import TicketPanelView, TicketControlView, SuggestionView
-          from cogs.color_roles import ColorPanelView
-          from cogs.ping_roles import PingPanelView
+          from database import init_db
+          from cogs.community import init_community_tables, TicketPanelView, TicketControlView, SuggestionView
+          from cogs.color_roles import init_color_tables, ColorPanelView
+          from cogs.ping_roles import init_tables, PingPanelView
           from cogs.updates import SorteioView
           from cogs.fun import QuizView
+
+          async def initialize_test_db():
+              await init_db()
+              await init_community_tables()
+
+          asyncio.run(initialize_test_db())
+          init_color_tables()
+          init_tables()
 
           settings = {
               "panel_title": "Test panel",
