@@ -238,12 +238,12 @@ class ColorRoles(commands.Cog):
         with connect_db() as db:
             panels = db.execute(
                 """
-                SELECT guild_id, message_id
+                SELECT guild_id, message_id, title, description
                 FROM color_panels
                 """
             ).fetchall()
 
-        for guild_id, message_id in panels:
+        for guild_id, message_id, title, description in panels:
             colors = get_colors(guild_id)
             view = ColorPanelView(self.bot, guild_id, colors, title, description)
 
@@ -341,7 +341,7 @@ class ColorRoles(commands.Cog):
                 else:
                     message = await canal.send(view=view)
             else:
-                message = await canal.send(embed=embed, view=view)
+                message = await canal.send(view=view)
 
             with connect_db() as db:
                 db.execute(
