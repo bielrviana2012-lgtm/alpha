@@ -59,6 +59,15 @@ async def init_community_tables():
                 rating_message_id INTEGER
             )
         """)
+        # Suggestions also track the moderator and optional response.
+        cursor = await db.execute("PRAGMA table_info(suggestions)")
+        suggestion_columns = {row[1] for row in await cursor.fetchall()}
+        for column, definition in {
+            "admin_id": "INTEGER",
+            "response": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if column not in suggestion_columns:
+                await db.execute(f"ALTER TABLE suggestions ADD COLUMN {column} {definition}")
         # Legacy compatibility: preserve the old tickets table if it exists.
         await db.execute("""
             CREATE TABLE IF NOT EXISTS tickets (
@@ -112,70 +121,86 @@ def parse_color(value: str) -> discord.Color:
 # SUGGESTIONS (preserved)
 # ---------------------------------------------------------------------------
 
-class SuggestionView(discord.ui.View):
-    def __init__(self, suggestion_id: int):
+class SuggestionView(discord.ui.LayoutView):
+    def __init__(self, suggestion_id: int = 0, texto: str = "", autor_id: int = 0,
+                 status: str = "Em análise", yes: int = 0, no: int = 0,
+                 admin_id: int | None = None, response: str = ""):
         super().__init__(timeout=None)
-        self.suggestion_id = suggestion_id
+        panel = discord.ui.Container(accent_colour=PURPLE)
+        panel.add_item(discord.ui.TextDisplay(f"# 💡 Sugestão #{suggestion_id}"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(texto or "Sugestão registrada."))
+        if autor_id:
+            panel.add_item(discord.ui.TextDisplay(f"**👤 Sugerida por**\n<@{autor_id}>"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(
+            f"**📌 Status**\n{status_emoji(status)} {status}\n\n"
+            f"**👍 Apoio**\n{yes}\n\n**👎 Não apoio**\n{no}"
+        ))
+        if admin_id:
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(
+                f"**🛡️ Decisão da equipe**\nResponsável: <@{admin_id}>\nResultado: {status}"
+            ))
+        if response:
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**💬 Resposta da equipe**\n{response[:1000]}"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Sistema de sugestões"))
+        self.add_item(panel)
+        row = discord.ui.ActionRow()
+        yes_button = discord.ui.Button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success, custom_id="alpha_suggest_yes")
+        no_button = discord.ui.Button(label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary, custom_id="alpha_suggest_no")
+        yes_button.callback = self.yes
+        no_button.callback = self.no
+        row.add_item(yes_button)
+        row.add_item(no_button)
+        self.add_item(row)
 
     async def vote(self, interaction: discord.Interaction, vote: int):
         if not interaction.guild_id or not interaction.message:
-            return await interaction.response.send_message(
-                "Este botão só funciona dentro do servidor.", ephemeral=True
-            )
+            return await interaction.response.send_message("Este botão só funciona dentro do servidor.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute(
-                "SELECT id FROM suggestions WHERE message_id=? AND guild_id=?",
+                "SELECT id,text,user_id,status,admin_id,response FROM suggestions WHERE message_id=? AND guild_id=?",
                 (interaction.message.id, interaction.guild_id),
             )
             row = await cur.fetchone()
             if not row:
-                return await interaction.response.send_message(
-                    "Não encontrei esta sugestão no banco de dados.", ephemeral=True
-                )
-            sid = row[0]
+                return await interaction.response.send_message("Não encontrei esta sugestão no banco de dados.", ephemeral=True)
+            sid, texto, autor_id, status, admin_id, response = row
             cur = await db.execute(
                 "SELECT vote FROM suggestion_votes WHERE suggestion_id=? AND user_id=?",
                 (sid, interaction.user.id),
             )
             previous = await cur.fetchone()
             if previous and previous[0] == vote:
-                return await interaction.response.send_message(
-                    "Você já votou dessa forma. Seu voto foi mantido.", ephemeral=True
-                )
+                return await interaction.response.send_message("Você já votou dessa forma. Seu voto foi mantido.", ephemeral=True)
             await db.execute(
                 """INSERT INTO suggestion_votes(suggestion_id,user_id,vote)
-                VALUES(?,?,?) ON CONFLICT(suggestion_id,user_id)
-                DO UPDATE SET vote=excluded.vote""",
+                VALUES(?,?,?) ON CONFLICT(suggestion_id,user_id) DO UPDATE SET vote=excluded.vote""",
                 (sid, interaction.user.id, vote),
             )
             cur = await db.execute(
                 """SELECT SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END)
-                FROM suggestion_votes WHERE suggestion_id=?""",
-                (sid,),
+                FROM suggestion_votes WHERE suggestion_id=?""", (sid,),
             )
             yes, no = await cur.fetchone()
             await db.commit()
-
-        embed = interaction.message.embeds[0]
-        embed.set_footer(
-            text=f"Sugestão #{sid} • 👍 {yes or 0} | 👎 {no or 0} • Sr.Alpha"
+        await interaction.response.edit_message(
+            embeds=[], view=SuggestionView(sid, texto, autor_id, status, yes or 0, no or 0, admin_id, response)
         )
-        await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(
-        label="Apoiar", emoji="👍", style=discord.ButtonStyle.success,
-        custom_id="alpha_suggest_yes",
-    )
-    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def yes(self, interaction: discord.Interaction):
         await self.vote(interaction, 1)
 
-    @discord.ui.button(
-        label="Não apoiar", emoji="👎", style=discord.ButtonStyle.secondary,
-        custom_id="alpha_suggest_no",
-    )
-    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def no(self, interaction: discord.Interaction):
         await self.vote(interaction, -1)
+
+
+def status_emoji(status: str) -> str:
+    return {"Aprovada": "🟢", "Recusada": "🔴", "Em análise": "🟡", "Pendente": "🟡"}.get(status, "⚪")
 
 
 # ---------------------------------------------------------------------------
