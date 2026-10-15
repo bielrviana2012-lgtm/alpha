@@ -214,7 +214,7 @@ class Community(commands.Cog):
             return await interaction.response.send_message("Não consegui encontrar a mensagem da sugestão.", ephemeral=True)
 
         try:
-            await message.edit(view=suggestion_view(
+            await message.edit(embeds=[], view=suggestion_view(
                 numero, texto, autor_id, status.value, interaction.user.id, resposta.strip()[:1024]
             ))
         except discord.HTTPException:
