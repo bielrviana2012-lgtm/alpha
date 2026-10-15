@@ -127,9 +127,12 @@ class AlphaBot(commands.Bot):
             expected_commands = {
                 "ajuda",
                 "painel_tickets",
-                "ticket_configurar",
+                "ticket",
                 "ticket_categoria_adicionar",
+                "ticket_categoria_editar",
                 "ticket_categoria_remover",
+                "ticket_configurar_avaliacoes",
+                "fechar_ticket",
                 "sugerir",
                 "status_sugestao",
                 "painel_pings",
@@ -238,9 +241,11 @@ async def ajuda(interaction: discord.Interaction):
             "`/status_sugestao` — atualizar uma sugestão\n"
             "`/ticket` — publicar painel de atendimento\n"
             "`/painel_tickets` — publicar painel de tickets\n"
-            "`/ticket_configurar` — personalizar o painel\n"
+            "`/ticket_categoria_editar` — editar categoria\n"
             "`/ticket_categoria_adicionar` — criar categoria\n"
-            "`/ticket_categoria_remover` — remover categoria",
+            "`/ticket_categoria_remover` — remover categoria\n"
+            "`/ticket_configurar_avaliacoes` — configurar avaliações\n"
+            "`/fechar_ticket` — fechar o ticket atual",
         ),
         (
             "🎨 Cargos e notificações",
