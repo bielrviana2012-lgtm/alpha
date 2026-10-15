@@ -36,6 +36,7 @@ EXTENSIONS = (
     "cogs.ai_chat",
     "cogs.levels",
     "cogs.updates",
+    "cogs.embed_builder",
 )
 
 
@@ -140,6 +141,7 @@ class AlphaBot(commands.Bot):
                 "remover_ping",
                 "listar_pings",
                 "painel_cores",
+                "criar_embed",
             }
 
             missing = expected_commands - set(command_names)
