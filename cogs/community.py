@@ -385,18 +385,24 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
                 target = None
 
         if target:
-            embed = discord.Embed(
-                title="⭐ Nova avaliação de atendimento",
-                description=f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** <@{record['attendant_id']}>"
+            description = (
+                f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** <@{record['attendant_id']}>"
                 if record["attendant_id"] else
-                f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** Não identificado",
-                color=PURPLE,
+                f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** Não identificado"
             )
-            embed.add_field(name="Categoria", value=f"ID: {record['category_id']}" if record["category_id"] else "Não informada", inline=True)
-            embed.add_field(name="Comentário", value=comment or "Nenhum comentário enviado.", inline=False)
-            embed.set_footer(text=f"Sr.Alpha • Atendimento {self.channel_id}")
+            layout = discord.ui.LayoutView(timeout=None)
+            panel = discord.ui.Container(accent_colour=PURPLE)
+            panel.add_item(discord.ui.TextDisplay("# ⭐ Nova avaliação de atendimento"))
+            panel.add_item(discord.ui.TextDisplay(description))
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**Categoria**\n{'ID: ' + str(record['category_id']) if record['category_id'] else 'Não informada'}"))
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**Comentário**\n{comment or 'Nenhum comentário enviado.'}"))
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"-# Sr.Alpha • Atendimento {self.channel_id}"))
+            layout.add_item(panel)
             try:
-                await target.send(embed=embed)
+                await target.send(view=layout)
             except discord.HTTPException:
                 log.exception("Não foi possível publicar a avaliação.")
         await interaction.response.send_message("Obrigado! Sua avaliação foi registrada.", ephemeral=True)
@@ -830,14 +836,19 @@ class Community(commands.Cog):
         if config.WELCOME_CHANNEL_ID:
             channel = member.guild.get_channel(config.WELCOME_CHANNEL_ID)
             if channel:
-                embed = discord.Embed(
-                    title="👋 Bem-vindo à comunidade!",
-                    description=f"{member.mention}, seja bem-vindo ao **{member.guild.name}**!\nVocê é o membro **{member.guild.member_count}**.",
-                    color=PURPLE,
-                )
-                embed.set_thumbnail(url=member.display_avatar.url)
+                layout = discord.ui.LayoutView(timeout=None)
+                panel = discord.ui.Container(accent_colour=PURPLE)
+                panel.add_item(discord.ui.TextDisplay("# 👋 Bem-vindo à comunidade!"))
+                panel.add_item(discord.ui.TextDisplay(
+                    f"{member.mention}, seja bem-vindo ao **{member.guild.name}**!\n"
+                    f"Você é o membro **{member.guild.member_count}**."
+                ))
+                panel.add_item(discord.ui.Separator())
+                panel.add_item(discord.ui.TextDisplay(f"[🖼️ Avatar do membro]({member.display_avatar.url})"))
+                panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+                layout.add_item(panel)
                 try:
-                    await channel.send(embed=embed)
+                    await channel.send(view=layout)
                 except discord.HTTPException:
                     log.exception("Não foi possível enviar mensagem de boas-vindas.")
 
