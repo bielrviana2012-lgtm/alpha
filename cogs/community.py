@@ -182,29 +182,34 @@ class SuggestionView(discord.ui.View):
 # TICKET PANEL + CATEGORY MENU
 # ---------------------------------------------------------------------------
 
-def ticket_panel_embed(settings: dict, categories: list[dict]) -> discord.Embed:
-    embed = discord.Embed(
-        title=settings["panel_title"],
-        description=settings["panel_description"],
-        color=discord.Color(settings["panel_color"]),
-    )
+def ticket_panel_container(settings: dict, categories: list[dict]) -> discord.ui.Container:
+    container = discord.ui.Container(accent_colour=discord.Color(settings["panel_color"]))
+    container.add_item(discord.ui.TextDisplay(f"# {settings['panel_title']}"))
+    container.add_item(discord.ui.TextDisplay(settings["panel_description"]))
     if settings.get("hours_text"):
-        embed.add_field(name="🕒 Horário de funcionamento", value=settings["hours_text"][:1024], inline=False)
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"**🕒 Horário de funcionamento**\n{settings['hours_text'][:1000]}"))
     if settings.get("notices_text"):
-        embed.add_field(name="📌 Avisos", value=settings["notices_text"][:1024], inline=False)
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"**📌 Avisos**\n{settings['notices_text'][:1000]}"))
     if categories:
-        lines = []
-        for item in categories:
-            lines.append(f"{item['emoji']} **{item['name']}** — {item['description'] or 'Solicite atendimento nesta categoria.'}")
-        embed.add_field(name="📂 Categorias disponíveis", value="\n".join(lines)[:1024], inline=False)
+        lines = [
+            f"{item['emoji']} **{item['name']}** — {item['description'] or 'Solicite atendimento nesta categoria.'}"
+            for item in categories
+        ]
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("**📂 Categorias disponíveis**\n" + "\n".join(lines)[:3500]))
     else:
-        embed.add_field(
-            name="⚙️ Configuração", value="A equipe ainda não cadastrou categorias.", inline=False
-        )
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("**⚙️ Configuração**\nA equipe ainda não cadastrou categorias."))
     if settings.get("panel_image"):
-        embed.set_image(url=settings["panel_image"])
-    embed.set_footer(text="Sr.Alpha • Central de Atendimento")
-    return embed
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"[🖼️ Abrir imagem do painel]({settings['panel_image']})"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Atendimento"))
+    return container
+
+
 
 
 class TicketCategorySelect(discord.ui.Select):
@@ -238,10 +243,20 @@ class TicketCategorySelect(discord.ui.Select):
         await cog.create_ticket(interaction, int(self.values[0]))
 
 
-class TicketPanelView(discord.ui.View):
-    def __init__(self, guild_id: int, categories: list[dict]):
+class TicketPanelView(discord.ui.LayoutView):
+    def __init__(self, guild_id: int, categories: list[dict], settings: dict | None = None):
         super().__init__(timeout=None)
-        self.add_item(TicketCategorySelect(guild_id, categories))
+        settings = settings or {
+            "panel_title": "🎫 Central de Atendimento",
+            "panel_description": "Escolha no menu abaixo a categoria para a qual deseja atendimento.",
+            "panel_color": PURPLE.value, "panel_image": "", "hours_text": "", "notices_text": "",
+        }
+        self.add_item(ticket_panel_container(settings, categories))
+        row = discord.ui.ActionRow()
+        row.add_item(TicketCategorySelect(guild_id, categories))
+        self.add_item(row)
+
+
 
 
 class TicketControlView(discord.ui.View):
@@ -411,7 +426,7 @@ class Community(commands.Cog):
         try:
             message = await channel.fetch_message(settings["panel_message_id"])
             categories = await get_ticket_categories(guild.id)
-            await message.edit(embed=ticket_panel_embed(settings, categories), view=TicketPanelView(guild.id, categories))
+            await message.edit(embeds=[], view=TicketPanelView(guild.id, categories, settings))
             self.bot.add_view(TicketPanelView(guild.id, categories), message_id=message.id)
         except discord.HTTPException:
             log.exception("Não foi possível atualizar o painel de tickets.")
@@ -586,7 +601,7 @@ class Community(commands.Cog):
             await db.commit()
         settings = await get_ticket_settings(guild.id)
         categories = await get_ticket_categories(guild.id)
-        message = await canal.send(embed=ticket_panel_embed(settings, categories), view=TicketPanelView(guild.id, categories))
+        message = await canal.send(view=TicketPanelView(guild.id, categories, settings))
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE ticket_settings SET panel_message_id=? WHERE guild_id=?", (message.id, guild.id))
             await db.commit()
@@ -787,7 +802,7 @@ class Community(commands.Cog):
                 await db.commit()
         categories = await get_ticket_categories(interaction.guild_id)
         await interaction.response.defer(ephemeral=True)
-        message = await canal.send(embed=ticket_panel_embed(settings, categories), view=TicketPanelView(interaction.guild_id, categories))
+        message = await canal.send(view=TicketPanelView(interaction.guild_id, categories, settings))
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE ticket_settings SET panel_channel_id=?,panel_message_id=? WHERE guild_id=?", (canal.id, message.id, interaction.guild_id))
             await db.commit()
