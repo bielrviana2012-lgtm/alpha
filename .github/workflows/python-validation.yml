@@ -44,3 +44,38 @@ jobs:
               importlib.import_module(module)
               print(f"OK: {module}")
           PY
+
+      - name: Smoke test Components V2 views
+        env:
+          DISCORD_TOKEN: validation-token
+          GUILD_ID: "1536903015678873710"
+        run: |
+          python - <<'PY'
+          import discord
+          from cogs.community import TicketPanelView, TicketControlView, SuggestionView
+          from cogs.color_roles import ColorPanelView
+          from cogs.ping_roles import PingPanelView
+          from cogs.updates import SorteioView
+          from cogs.fun import QuizView
+
+          settings = {
+              "panel_title": "Test panel",
+              "panel_description": "Test description",
+              "panel_color": 0x9167FF,
+              "panel_image": "",
+              "hours_text": "",
+              "notices_text": "",
+          }
+          views = [
+              TicketPanelView(1, [], settings),
+              TicketControlView(),
+              SuggestionView(),
+              ColorPanelView(None, 1, []),
+              PingPanelView(None),
+              SorteioView(1, 1, "Test giveaway", "Test details"),
+              QuizView(["A", "B", "C", "D"], 0, 1, "Test question"),
+          ]
+          for view in views:
+              assert isinstance(view, discord.ui.LayoutView), type(view).__name__
+              print(f"OK: {type(view).__name__}")
+          PY
