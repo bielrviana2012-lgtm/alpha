@@ -4,6 +4,7 @@ from discord.ext import commands
 import aiosqlite
 from database import DB_PATH
 import config
+from cogs.ui_v2 import make_v2_panel
 
 async def log_action(guild, text):
     if config.LOG_CHANNEL_ID:
@@ -31,7 +32,10 @@ class Moderation(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT reason, moderator_id, created_at FROM warnings WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 10", (interaction.guild_id,membro.id)); rows = await cur.fetchall()
         desc = "\n".join(f"• {reason} — <@{mod}> ({when})" for reason,mod,when in rows) if rows else "Nenhum aviso registrado."
-        await interaction.response.send_message(embed=discord.Embed(title=f"📋 Avisos: {membro}", description=desc, color=discord.Color.orange()), ephemeral=True)
+        await interaction.response.send_message(
+            view=make_v2_panel(f"📋 Avisos: {membro}", desc),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="limpar", description="Apague mensagens recentes do canal")
     @app_commands.default_permissions(manage_messages=True)
