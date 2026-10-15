@@ -22,14 +22,15 @@ MODOS = [
 
 
 def embed_jogo(titulo, descricao, cor=COR):
-    embed = discord.Embed(
-        title=f"✦ SR.ALPHA • {titulo}",
-        description=descricao,
-        color=cor,
-    )
-    embed.set_footer(text="Family Alpha • Arcade Premium")
-    return embed
-
+    layout = discord.ui.LayoutView(timeout=None)
+    panel = discord.ui.Container(accent_colour=cor)
+    panel.add_item(discord.ui.TextDisplay(f"# ✦ SR.ALPHA • {titulo}"))
+    panel.add_item(discord.ui.Separator())
+    panel.add_item(discord.ui.TextDisplay(descricao[:4000]))
+    panel.add_item(discord.ui.Separator())
+    panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+    layout.add_item(panel)
+    return layout
 
 async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
                          premio=0, empate=False):
@@ -46,7 +47,7 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
             f"{descricao}\n\n🎮 **Modo brincadeira**\n"
             "Nenhuma moeda foi ganha ou perdida.",
         )
-        return await interaction.response.send_message(embed=embed)
+        return await interaction.response.send_message(view=embed)
 
     if aposta is None or aposta < 1:
         return await interaction.response.send_message(
@@ -118,51 +119,62 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
         f"{config.CURRENCY_NAME}",
         cor,
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(view=embed)
 
 
-class QuizView(discord.ui.View):
-    def __init__(self, options, answer, owner_id):
+class QuizView(discord.ui.LayoutView):
+    def __init__(self, options, answer, owner_id, question):
         super().__init__(timeout=30)
         self.answer = answer
         self.owner_id = owner_id
+        self.question = question
         self.done = False
+        self.result_title = None
+        self.result_description = None
+        self.result_color = COR
+        self._build_layout(options)
 
-        for i, option in enumerate(options):
-            button = discord.ui.Button(
-                label=option,
-                style=discord.ButtonStyle.primary,
-            )
-            button.callback = self.make_callback(i)
-            self.add_item(button)
+    def _build_layout(self, options=None):
+        self.clear_items()
+        panel = discord.ui.Container(accent_colour=self.result_color)
+        if self.done:
+            panel.add_item(discord.ui.TextDisplay(f"# ✦ SR.ALPHA • {self.result_title}"))
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(self.result_description))
+            panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+            self.add_item(panel)
+            return
 
-    def make_callback(self, index):
+        panel.add_item(discord.ui.TextDisplay("# 🧠 Quiz Alpha"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(f"**{self.question}**\n\nEscolha uma resposta abaixo!"))
+        panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+        self.add_item(panel)
+
+        row = discord.ui.ActionRow()
+        for i, option in enumerate(options or []):
+            button = discord.ui.Button(label=option, style=discord.ButtonStyle.primary)
+            button.callback = self.make_callback(i, options)
+            row.add_item(button)
+        self.add_item(row)
+
+    def make_callback(self, index, options):
         async def callback(interaction):
             if interaction.user.id != self.owner_id:
                 return await interaction.response.send_message(
-                    "Este quiz pertence a outra pessoa.",
-                    ephemeral=True,
+                    "Este quiz pertence a outra pessoa.", ephemeral=True
                 )
-
             if self.done:
                 return await interaction.response.send_message(
-                    "Esta pergunta já foi respondida.",
-                    ephemeral=True,
+                    "Esta pergunta já foi respondida.", ephemeral=True
                 )
-
             self.done = True
-            for child in self.children:
-                child.disabled = True
-
             correto = index == self.answer
-            embed = embed_jogo(
-                "Quiz Alpha",
-                "🎉 Resposta correta!" if correto
-                else "❌ Resposta incorreta! Tente novamente.",
-                VERDE if correto else VERMELHO,
-            )
-            await interaction.response.edit_message(embed=embed, view=self)
-
+            self.result_title = "Quiz Alpha"
+            self.result_description = "🎉 Resposta correta!" if correto else "❌ Resposta incorreta! Tente novamente."
+            self.result_color = VERDE if correto else VERMELHO
+            self._build_layout()
+            await interaction.response.edit_message(embeds=[], view=self)
         return callback
 
 
@@ -190,13 +202,8 @@ class Fun(commands.Cog):
     )
     async def quiz(self, interaction: discord.Interaction):
         pergunta, opcoes, resposta = random.choice(QUESTIONS)
-        embed = embed_jogo(
-            "🧠 Quiz Alpha",
-            f"**{pergunta}**\n\nEscolha uma resposta abaixo!",
-        )
         await interaction.response.send_message(
-            embed=embed,
-            view=QuizView(opcoes, resposta, interaction.user.id),
+            view=QuizView(opcoes, resposta, interaction.user.id, pergunta),
         )
 
     @app_commands.command(
@@ -449,7 +456,7 @@ class Fun(commands.Cog):
             "🔮 Bola mágica",
             f"**Pergunta:** {pergunta}\n\n**Resposta:** {random.choice(respostas)}",
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(view=embed)
 
     @app_commands.command(name="duelo", description="Desafie a sorte em um duelo")
     @app_commands.choices(modo=MODOS)
