@@ -16,14 +16,18 @@ class TicketShortcutView(discord.ui.LayoutView):
 
     def __init__(self):
         super().__init__(timeout=None)
+        self.add_ticket_button(self)
+
+    @staticmethod
+    def add_ticket_button(layout: discord.ui.LayoutView):
         row = discord.ui.ActionRow()
         button = discord.ui.Button(
             label="Abrir ticket", emoji="🎫", style=discord.ButtonStyle.primary,
             custom_id="alpha_embed_open_ticket",
         )
-        button.callback = self.open_ticket
+        button.callback = TicketShortcutView().open_ticket
         row.add_item(button)
-        self.add_item(row)
+        layout.add_item(row)
 
     async def open_ticket(self, interaction: discord.Interaction):
         if interaction.guild is None:
@@ -145,7 +149,7 @@ class EmbedBuilder(commands.Cog):
         container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
         layout.add_item(container)
         if botao_ticket:
-            layout.add_item(TicketShortcutView())
+            TicketShortcutView.add_ticket_button(layout)
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
