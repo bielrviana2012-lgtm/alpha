@@ -376,12 +376,6 @@ class RatingView(discord.ui.View):
                     return await interaction.response.send_message("Não encontrei este atendimento.", ephemeral=True)
                 if record["rating"] is not None:
                     return await interaction.response.send_message("Você já avaliou este atendimento. Obrigado!", ephemeral=True)
-                await db.execute(
-                    "UPDATE ticket_records SET rating=? WHERE channel_id=?",
-                    (score, self.channel_id),
-                )
-                await db.commit()
-
             await interaction.response.send_modal(RatingCommentModal(self.channel_id, score))
         return callback
 
@@ -408,10 +402,16 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
             record = await cur.fetchone()
             if not record:
                 return await interaction.response.send_message("Atendimento não encontrado.", ephemeral=True)
-            await db.execute(
-                "UPDATE ticket_records SET rating_comment=? WHERE channel_id=?",
-                (comment, self.channel_id),
+            cur = await db.execute(
+                """UPDATE ticket_records SET rating=?, rating_comment=?
+                   WHERE channel_id=? AND user_id=? AND rating IS NULL""",
+                (self.score, comment, self.channel_id, interaction.user.id),
             )
+            if cur.rowcount == 0:
+                return await interaction.response.send_message(
+                    "Esta avaliação já foi registrada. Obrigado!",
+                    ephemeral=True,
+                )
             await db.commit()
 
         settings = await get_ticket_settings(record["guild_id"])
