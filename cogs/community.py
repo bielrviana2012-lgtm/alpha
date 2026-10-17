@@ -573,12 +573,16 @@ class Community(commands.Cog):
             f"**👤 Solicitante:** {interaction.user.mention}\n"
             f"**🛡️ Equipe responsável:** {staff_role.mention}"
         )
-        # Components V2 não permite combinar LayoutView com o parâmetro content.
-        # As menções ficam dentro do TextDisplay do painel e são autorizadas aqui.
+        # Envia as menções em uma mensagem normal para notificar de verdade
+        # o solicitante e o cargo da equipe. Components V2 vai em outra mensagem.
+        await channel.send(
+            content=f"🎫 Novo ticket aberto por {interaction.user.mention}. Equipe responsável: {staff_role.mention}",
+            allowed_mentions=discord.AllowedMentions(users=True, roles=True),
+        )
         await channel.send(
             view=TicketControlView(
                 f"{category['emoji']} {category['name']}",
-                f"{interaction.user.mention} {staff_role.mention}\n\n{ticket_description}",
+                ticket_description,
             ),
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
