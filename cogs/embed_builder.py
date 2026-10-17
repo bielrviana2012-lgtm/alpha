@@ -1,4 +1,5 @@
-"""Comando administrativo para criar painéis personalizados com Components V2."""
+
+"""Comando para criar painéis personalizados usando Components V2."""
 
 import logging
 
@@ -6,8 +7,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-
 log = logging.getLogger("Sr.Alpha.EmbedBuilder")
+
+PURPLE = discord.Color.from_rgb(145, 103, 255)
+MAX_FIELDS = 25
+MAX_TOTAL_TEXT = 3800
 
 
 class EmbedBuilder(commands.Cog):
@@ -16,122 +20,200 @@ class EmbedBuilder(commands.Cog):
 
     @app_commands.command(
         name="criar_embed",
-        description="Cria uma mensagem personalizada usando Components V2.",
+        description="Cria um painel personalizado com até 25 campos.",
     )
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
-        titulo="Título que aparecerá no painel",
-        descricao="Texto principal do painel",
-        canal="Canal onde o painel será publicado",
-        cor="Cor hexadecimal, por exemplo #9167FF",
-        campo1_titulo="Título opcional do primeiro campo",
-        campo1_texto="Texto opcional do primeiro campo",
-        campo2_titulo="Título opcional do segundo campo",
-        campo2_texto="Texto opcional do segundo campo",
-        campo3_titulo="Título opcional do terceiro campo",
-        campo3_texto="Texto opcional do terceiro campo",
+        titulo="Título do painel",
+        descricao="Descrição principal do painel",
+        canal="Canal onde o painel será enviado",
+        cor="Cor hexadecimal, exemplo: #9167FF",
+        campos=(
+            "Um campo por linha, no formato Título | Texto. "
+            "Máximo de 25 campos."
+        ),
     )
     async def criar_embed(
         self,
         interaction: discord.Interaction,
         titulo: app_commands.Range[str, 1, 200],
-        descricao: app_commands.Range[str, 1, 3500],
+        descricao: app_commands.Range[str, 1, 2000],
         canal: discord.TextChannel,
-        cor: app_commands.Range[str, 4, 7] = "#9167FF",
-        campo1_titulo: app_commands.Range[str, 1, 100] | None = None,
-        campo1_texto: app_commands.Range[str, 1, 1000] | None = None,
-        campo2_titulo: app_commands.Range[str, 1, 100] | None = None,
-        campo2_texto: app_commands.Range[str, 1, 1000] | None = None,
-        campo3_titulo: app_commands.Range[str, 1, 100] | None = None,
-        campo3_texto: app_commands.Range[str, 1, 1000] | None = None,
+        cor: str = "#9167FF",
+        campos: str = "",
     ):
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message(
-                "Este comando só pode ser usado dentro de um servidor.",
-                ephemeral=True,
-            )
-            return
-
+        # Verifica as permissões de quem executou o comando.
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "Apenas administradores podem criar painéis.",
+                "❌ Você precisa ser administrador para usar este comando.",
                 ephemeral=True,
             )
             return
 
-        bot_member = interaction.guild.me
-        if bot_member is None or not canal.permissions_for(bot_member).send_messages:
+        # Verifica a cor hexadecimal.
+        cor = cor.strip().removeprefix("#")
+
+        if (
+            len(cor) not in (3, 6)
+            or any(char not in "0123456789abcdefABCDEF" for char in cor)
+        ):
             await interaction.response.send_message(
-                f"Não tenho permissão para enviar mensagens em {canal.mention}.",
+                "❌ Cor inválida. Use um hexadecimal como `#9167FF`.",
                 ephemeral=True,
             )
             return
 
-        hex_color = cor.strip().removeprefix("#")
-        if len(hex_color) not in (3, 6) or any(c not in "0123456789abcdefABCDEF" for c in hex_color):
+        if len(cor) == 3:
+            cor = "".join(char * 2 for char in cor)
+
+        accent = discord.Color(int(cor, 16))
+
+        # Analisa os campos informados.
+        parsed_fields = []
+
+        if campos.strip():
+            for line_number, line in enumerate(campos.splitlines(), start=1):
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                if "|" not in line:
+                    await interaction.response.send_message(
+                        f"❌ A linha {line_number} está incorreta.\n"
+                        "Use o formato `Título | Texto`.",
+                        ephemeral=True,
+                    )
+                    return
+
+                field_title, field_text = line.split("|", 1)
+                field_title = field_title.strip()
+                field_text = field_text.strip()
+
+                if not field_title or not field_text:
+                    await interaction.response.send_message(
+                        f"❌ A linha {line_number} precisa ter "
+                        "título e texto.",
+                        ephemeral=True,
+                    )
+                    return
+
+                if len(field_title) > 256:
+                    await interaction.response.send_message(
+                        f"❌ O título do campo da linha {line_number} "
+                        "ultrapassa 256 caracteres.",
+                        ephemeral=True,
+                    )
+                    return
+
+                if len(field_text) > 1000:
+                    await interaction.response.send_message(
+                        f"❌ O texto do campo da linha {line_number} "
+                        "ultrapassa 1000 caracteres.",
+                        ephemeral=True,
+                    )
+                    return
+
+                parsed_fields.append((field_title, field_text))
+
+                if len(parsed_fields) > MAX_FIELDS:
+                    await interaction.response.send_message(
+                        f"❌ Você pode adicionar no máximo {MAX_FIELDS} campos.",
+                        ephemeral=True,
+                    )
+                    return
+
+        # Componentes V2 têm limite total de 4000 caracteres de texto.
+        total_text = len(titulo) + len(descricao)
+
+        for field_title, field_text in parsed_fields:
+            total_text += len(field_title) + len(field_text) + 4
+
+        if total_text > MAX_TOTAL_TEXT:
             await interaction.response.send_message(
-                "Cor inválida. Use um código hexadecimal como #9167FF.",
+                "❌ O conteúdo ficou muito grande para uma única mensagem "
+                "Components V2. Reduza a descrição ou os textos dos campos.",
                 ephemeral=True,
             )
             return
 
-        if len(hex_color) == 3:
-            hex_color = "".join(char * 2 for char in hex_color)
+        # Verifica as permissões do bot no canal.
+        bot_member = interaction.guild.me if interaction.guild else None
 
-        accent = discord.Color(int(hex_color, 16))
-        fields = [
-            (campo1_titulo, campo1_texto),
-            (campo2_titulo, campo2_texto),
-            (campo3_titulo, campo3_texto),
-        ]
+        if bot_member is None:
+            await interaction.response.send_message(
+                "❌ Este comando só pode ser usado dentro de um servidor.",
+                ephemeral=True,
+            )
+            return
 
-        for field_title, field_text in fields:
-            if bool(field_title) != bool(field_text):
-                await interaction.response.send_message(
-                    "Para cada campo, preencha o título e o texto juntos.",
-                    ephemeral=True,
-                )
-                return
+        permissions = canal.permissions_for(bot_member)
 
+        if not permissions.view_channel or not permissions.send_messages:
+            await interaction.response.send_message(
+                "❌ Não tenho permissão para enviar mensagens nesse canal.",
+                ephemeral=True,
+            )
+            return
+
+        # Monta o painel Components V2.
         layout = discord.ui.LayoutView(timeout=None)
+
         container = discord.ui.Container(accent_colour=accent)
-        container.add_item(discord.ui.TextDisplay(f"# {titulo}"))
-        container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay(descricao))
 
-        for field_title, field_text in fields:
-            if field_title and field_text:
-                container.add_item(discord.ui.Separator())
-                container.add_item(discord.ui.TextDisplay(f"**{field_title}**\n{field_text}"))
+        container.add_item(
+            discord.ui.TextDisplay(f"# {titulo}")
+        )
 
         container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+
+        container.add_item(
+            discord.ui.TextDisplay(descricao)
+        )
+
+        for field_title, field_text in parsed_fields:
+            container.add_item(discord.ui.Separator())
+            container.add_item(
+                discord.ui.TextDisplay(
+                    f"**{field_title}**\n{field_text}"
+                )
+            )
+
+        container.add_item(discord.ui.Separator())
+        container.add_item(
+            discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha")
+        )
+
         layout.add_item(container)
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # Publica o painel.
         try:
-            await canal.send(view=layout, allowed_mentions=discord.AllowedMentions.none())
-            await interaction.followup.send(
-                f"Painel publicado em {canal.mention} usando Components V2.",
-                ephemeral=True,
+            await canal.send(
+                view=layout,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
-            log.info(
-                "Painel Components V2 publicado por %s em #%s (%s).",
-                interaction.user,
-                canal.name,
-                canal.id,
-            )
+
         except discord.Forbidden:
-            await interaction.followup.send(
-                f"Não tenho permissão para publicar o painel em {canal.mention}.",
+            await interaction.response.send_message(
+                "❌ Não tenho permissão para enviar o painel nesse canal.",
                 ephemeral=True,
             )
+            return
+
         except discord.HTTPException:
-            log.exception("Falha ao publicar painel Components V2.")
-            await interaction.followup.send(
-                "Não consegui publicar o painel. Confira as permissões do bot e tente novamente.",
+            log.exception("Erro ao enviar painel Components V2.")
+
+            await interaction.response.send_message(
+                "❌ O Discord não conseguiu publicar o painel. "
+                "Verifique o tamanho do conteúdo e as permissões.",
                 ephemeral=True,
             )
+            return
+
+        await interaction.response.send_message(
+            f"✅ Painel criado e enviado para {canal.mention}!",
+            ephemeral=True,
+        )
 
 
 async def setup(bot: commands.Bot):
