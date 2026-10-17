@@ -578,7 +578,7 @@ class Community(commands.Cog):
         await channel.send(
             view=TicketControlView(
                 f"{category['emoji']} {category['name']}",
-                f"{interaction.user.mention} {staff_role.mention}\\n\\n{ticket_description}",
+                f"{interaction.user.mention} {staff_role.mention}\n\n{ticket_description}",
             ),
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
