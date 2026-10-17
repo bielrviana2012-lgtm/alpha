@@ -335,7 +335,6 @@ class TicketControlView(discord.ui.LayoutView):
             description,
         )
         await interaction.response.edit_message(
-            content=f"👤 Solicitante: <@{record['user_id']}> | 🛡️ Equipe: {staff_mention} | 🧑‍💼 Responsável: {interaction.user.mention}",
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
@@ -574,9 +573,13 @@ class Community(commands.Cog):
             f"**👤 Solicitante:** {interaction.user.mention}\n"
             f"**🛡️ Equipe responsável:** {staff_role.mention}"
         )
+        # Components V2 não permite combinar LayoutView com o parâmetro content.
+        # As menções ficam dentro do TextDisplay do painel e são autorizadas aqui.
         await channel.send(
-            content=f"{interaction.user.mention} {staff_role.mention}",
-            view=TicketControlView(f"{category['emoji']} {category['name']}", ticket_description),
+            view=TicketControlView(
+                f"{category['emoji']} {category['name']}",
+                f"{interaction.user.mention} {staff_role.mention}\\n\\n{ticket_description}",
+            ),
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
         await interaction.response.send_message(f"🎫 Seu ticket foi criado: {channel.mention}", ephemeral=True)
