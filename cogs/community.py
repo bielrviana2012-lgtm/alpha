@@ -382,8 +382,11 @@ class RatingView(discord.ui.View):
 
 class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
     comment = discord.ui.TextInput(
-        label="Comentário (opcional)", placeholder="Conte como foi seu atendimento...",
-        required=False, max_length=800, style=discord.TextStyle.paragraph,
+        label="Comentário (opcional)",
+        placeholder="Conte como foi seu atendimento...",
+        required=False,
+        max_length=800,
+        style=discord.TextStyle.paragraph,
     )
 
     def __init__(self, channel_id: int, score: int):
@@ -393,6 +396,8 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
 
     async def on_submit(self, interaction: discord.Interaction):
         comment = str(self.comment.value or "").strip()
+
+        # Grava nota e comentário juntos, impedindo avaliações duplicadas.
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
@@ -401,9 +406,14 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
             )
             record = await cur.fetchone()
             if not record:
-                return await interaction.response.send_message("Atendimento não encontrado.", ephemeral=True)
+                return await interaction.response.send_message(
+                    "Não encontrei o atendimento associado à sua conta.",
+                    ephemeral=True,
+                )
+
             cur = await db.execute(
-                """UPDATE ticket_records SET rating=?, rating_comment=?
+                """UPDATE ticket_records
+                   SET rating=?, rating_comment=?
                    WHERE channel_id=? AND user_id=? AND rating IS NULL""",
                 (self.score, comment, self.channel_id, interaction.user.id),
             )
@@ -416,35 +426,64 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
 
         settings = await get_ticket_settings(record["guild_id"])
         guild = interaction.client.get_guild(record["guild_id"])
-        target = guild.get_channel(settings["rating_channel_id"]) if guild and settings and settings.get("rating_channel_id") else None
-        if target is None and guild and settings and settings.get("rating_channel_id"):
-            try:
-                target = await interaction.client.fetch_channel(settings["rating_channel_id"])
-            except discord.HTTPException:
-                target = None
+        rating_channel_id = settings.get("rating_channel_id") if settings else None
+        target = guild.get_channel(rating_channel_id) if guild and rating_channel_id else None
 
-        if target:
-            description = (
-                f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** <@{record['attendant_id']}>"
-                if record["attendant_id"] else
-                f"**Nota:** {'⭐' * self.score} ({self.score}/5)\n**Pessoa atendida:** <@{record['user_id']}>\n**Atendente:** Não identificado"
+        if target is None and rating_channel_id:
+            try:
+                target = await interaction.client.fetch_channel(rating_channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                log.exception("Não foi possível acessar o canal configurado para avaliações.")
+
+        if target is not None:
+            categories = await get_ticket_categories(record["guild_id"])
+            category = next(
+                (item for item in categories if item["id"] == record["category_id"]),
+                None,
             )
+            attendant = (
+                f"<@{record['attendant_id']}>"
+                if record["attendant_id"]
+                else "Não identificado"
+            )
+            category_name = (
+                f"{category['emoji']} {category['name']}"
+                if category
+                else "Categoria não encontrada"
+            )
+
             layout = discord.ui.LayoutView(timeout=None)
             panel = discord.ui.Container(accent_colour=PURPLE)
             panel.add_item(discord.ui.TextDisplay("# ⭐ Nova avaliação de atendimento"))
-            panel.add_item(discord.ui.TextDisplay(description))
             panel.add_item(discord.ui.Separator())
-            panel.add_item(discord.ui.TextDisplay(f"**Categoria**\n{'ID: ' + str(record['category_id']) if record['category_id'] else 'Não informada'}"))
+            panel.add_item(discord.ui.TextDisplay(
+                f"**Nota**\n{'⭐' * self.score} ({self.score}/5)\n\n"
+                f"**Pessoa atendida**\n<@{record['user_id']}>\n\n"
+                f"**Atendente**\n{attendant}\n\n"
+                f"**Categoria**\n{category_name}"
+            ))
             panel.add_item(discord.ui.Separator())
-            panel.add_item(discord.ui.TextDisplay(f"**Comentário**\n{comment or 'Nenhum comentário enviado.'}"))
+            panel.add_item(discord.ui.TextDisplay(
+                f"**Comentário**\n{comment or 'Nenhum comentário enviado.'}"
+            ))
             panel.add_item(discord.ui.Separator())
-            panel.add_item(discord.ui.TextDisplay(f"-# Sr.Alpha • Atendimento {self.channel_id}"))
+            panel.add_item(discord.ui.TextDisplay(
+                f"-# Sr.Alpha • Atendimento {self.channel_id}"
+            ))
             layout.add_item(panel)
+
             try:
-                await target.send(view=layout)
-            except discord.HTTPException:
-                log.exception("Não foi possível publicar a avaliação.")
-        await interaction.response.send_message("Obrigado! Sua avaliação foi registrada.", ephemeral=True)
+                await target.send(
+                    view=layout,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                log.exception("Não foi possível publicar a avaliação no canal configurado.")
+
+        await interaction.response.send_message(
+            "Obrigado! Sua avaliação foi registrada.",
+            ephemeral=True,
+        )
 
 
 # ---------------------------------------------------------------------------
