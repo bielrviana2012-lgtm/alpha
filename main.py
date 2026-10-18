@@ -1,4 +1,5 @@
 
+import asyncio
 import logging
 
 import discord
@@ -197,6 +198,71 @@ bot = AlphaBot(
 # EVENTO: BOT CONECTADO
 # =========================================================
 
+# Evita tentativas simultâneas de conexão quando o Discord dispara on_ready
+# novamente após uma reconexão do Gateway.
+_voice_connect_lock = asyncio.Lock()
+
+
+async def connect_fixed_voice_channel():
+    """Mantém o Sr.Alpha conectado ao canal de voz configurado no Railway."""
+    channel_id = int(getattr(config, "VOICE_CHANNEL_ID", 0) or 0)
+
+    if channel_id <= 0:
+        logger.info(
+            "VOICE_CHANNEL_ID não configurado; conexão automática à call desativada."
+        )
+        return
+
+    async with _voice_connect_lock:
+        try:
+            channel = bot.get_channel(channel_id)
+            if channel is None:
+                channel = await bot.fetch_channel(channel_id)
+
+            if not isinstance(channel, discord.VoiceChannel):
+                logger.error(
+                    "VOICE_CHANNEL_ID=%s não aponta para um canal de voz comum.",
+                    channel_id,
+                )
+                return
+
+            voice_client = discord.utils.get(
+                bot.voice_clients, guild=channel.guild
+            )
+
+            if voice_client and voice_client.is_connected():
+                if voice_client.channel and voice_client.channel.id == channel.id:
+                    logger.info("Sr.Alpha já está conectado à call: %s.", channel.name)
+                    return
+
+                await voice_client.move_to(channel)
+                logger.info("Sr.Alpha mudou para a call fixa: %s.", channel.name)
+                return
+
+            if voice_client:
+                try:
+                    await voice_client.disconnect(force=True)
+                except discord.DiscordException:
+                    logger.exception("Falha ao limpar a conexão de voz anterior.")
+
+            await channel.connect(timeout=30, reconnect=True, self_deaf=True)
+            logger.info("Sr.Alpha conectado à call fixa: %s (%s).", channel.name, channel.id)
+
+        except discord.Forbidden:
+            logger.error(
+                "Sem permissão para entrar no canal de voz %s. "
+                "Confira Ver canal e Conectar para o Sr.Alpha.",
+                channel_id,
+            )
+        except discord.NotFound:
+            logger.error(
+                "Canal de voz %s não encontrado. Confira o VOICE_CHANNEL_ID no Railway.",
+                channel_id,
+            )
+        except Exception:
+            logger.exception("Não foi possível conectar o Sr.Alpha à call fixa.")
+
+
 @bot.event
 async def on_ready():
     logger.info(
@@ -209,13 +275,15 @@ async def on_ready():
         await bot.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="a comunidade Alpha",
+                name="Family Alpha | Sempre na call",
             )
         )
-        logger.info("Presença do Sr.Alpha atualizada.")
+        logger.info("Presença personalizada do Sr.Alpha atualizada.")
 
     except discord.HTTPException:
         logger.exception("Não foi possível atualizar a presença.")
+
+    await connect_fixed_voice_channel()
 
 
 # =========================================================
