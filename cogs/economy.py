@@ -151,7 +151,6 @@ class Economy(commands.Cog):
         ))
 
     @app_commands.command(name="produto_criar", description="Adiciona um produto personalizado à loja")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(nome="Nome do produto", preco="Preço em Alpha Coins")
     async def produto_criar(
         self,
@@ -161,8 +160,8 @@ class Economy(commands.Cog):
     ):
         if not interaction.guild_id:
             return await interaction.response.send_message("Use este comando dentro do servidor.", ephemeral=True)
-        if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ Apenas administradores podem gerenciar a loja.", ephemeral=True)
+        if interaction.user.id != 1340377944215785502:
+            return await interaction.response.send_message("❌ Apenas o responsável autorizado pode alterar a loja.", ephemeral=True)
         nome = nome.strip()
         if not nome:
             return await interaction.response.send_message("O nome não pode ficar vazio.", ephemeral=True)
@@ -178,13 +177,12 @@ class Economy(commands.Cog):
         await interaction.response.send_message(f"✅ Produto **{nome}** adicionado à loja por **{preco:,} {config.CURRENCY_NAME}**.")
 
     @app_commands.command(name="produto_excluir", description="Remove um produto da loja")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(nome="Nome do produto a remover")
     async def produto_excluir(self, interaction: discord.Interaction, nome: str):
         if not interaction.guild_id:
             return await interaction.response.send_message("Use este comando dentro do servidor.", ephemeral=True)
-        if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ Apenas administradores podem gerenciar a loja.", ephemeral=True)
+        if interaction.user.id != 1340377944215785502:
+            return await interaction.response.send_message("❌ Apenas o responsável autorizado pode alterar a loja.", ephemeral=True)
         await self.ensure_shop(interaction.guild_id)
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute(
