@@ -8,10 +8,42 @@ from database import DB_PATH, get_user, ensure_user
 import config
 from cogs.ui_v2 import make_v2_panel
 
-SHOP = {"Caixa Misteriosa": 250, "Amuleto Alpha": 500, "Título VIP (cosmético)": 1000}
+DEFAULT_SHOP = {"Caixa Misteriosa": 250, "Amuleto Alpha": 500, "Título VIP (cosmético)": 1000}
 
 class Economy(commands.Cog):
     def __init__(self, bot): self.bot = bot
+
+    async def cog_load(self):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS shop_products (
+                    guild_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    price INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, name)
+                )
+            """)
+            await db.commit()
+
+    async def ensure_shop(self, guild_id: int):
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute("SELECT COUNT(*) FROM shop_products WHERE guild_id=?", (guild_id,))
+            count = (await cur.fetchone())[0]
+            if count == 0:
+                await db.executemany(
+                    "INSERT OR IGNORE INTO shop_products(guild_id,name,price) VALUES(?,?,?)",
+                    [(guild_id, name, price) for name, price in DEFAULT_SHOP.items()],
+                )
+                await db.commit()
+
+    async def get_products(self, guild_id: int):
+        await self.ensure_shop(guild_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT name, price FROM shop_products WHERE guild_id=? ORDER BY name",
+                (guild_id,),
+            )
+            return await cur.fetchall()
 
     @app_commands.command(name="saldo", description="Veja sua carteira e seu banco")
     async def saldo(self, interaction: discord.Interaction, membro: discord.Member | None = None):
@@ -112,23 +144,100 @@ class Economy(commands.Cog):
             footer=f"Sr.Alpha • Ranking dos 10 membros mais ricos",
         ))
 
+    @app_commands.command(name="produto_criar", description="Adiciona um produto personalizado à loja")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(nome="Nome do produto", preco="Preço em Alpha Coins")
+    async def produto_criar(
+        self,
+        interaction: discord.Interaction,
+        nome: app_commands.Range[str, 1, 100],
+        preco: app_commands.Range[int, 1, 1000000000],
+    ):
+        if not interaction.guild_id:
+            return await interaction.response.send_message("Use este comando dentro do servidor.", ephemeral=True)
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Apenas administradores podem gerenciar a loja.", ephemeral=True)
+        nome = nome.strip()
+        if not nome:
+            return await interaction.response.send_message("O nome não pode ficar vazio.", ephemeral=True)
+        await self.ensure_shop(interaction.guild_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "INSERT OR IGNORE INTO shop_products(guild_id,name,price) VALUES(?,?,?)",
+                (interaction.guild_id, nome, preco),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                return await interaction.response.send_message("Já existe um produto com esse nome. Escolha outro nome.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Produto **{nome}** adicionado à loja por **{preco:,} {config.CURRENCY_NAME}**.")
+
+    @app_commands.command(name="produto_excluir", description="Remove um produto da loja")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(nome="Nome do produto a remover")
+    async def produto_excluir(self, interaction: discord.Interaction, nome: str):
+        if not interaction.guild_id:
+            return await interaction.response.send_message("Use este comando dentro do servidor.", ephemeral=True)
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Apenas administradores podem gerenciar a loja.", ephemeral=True)
+        await self.ensure_shop(interaction.guild_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "DELETE FROM shop_products WHERE guild_id=? AND name=? COLLATE NOCASE",
+                (interaction.guild_id, nome.strip()),
+            )
+            await db.commit()
+        if cur.rowcount == 0:
+            return await interaction.response.send_message("Não encontrei esse produto na loja.", ephemeral=True)
+        await interaction.response.send_message(f"🗑️ Produto **{nome.strip()}** removido da loja.")
+
+    @produto_excluir.autocomplete("nome")
+    async def produto_excluir_autocomplete(self, interaction: discord.Interaction, current: str):
+        if not interaction.guild_id:
+            return []
+        await self.ensure_shop(interaction.guild_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT name FROM shop_products WHERE guild_id=? AND name LIKE ? ORDER BY name LIMIT 25",
+                (interaction.guild_id, f"%{current}%"),
+            )
+            return [app_commands.Choice(name=row[0][:100], value=row[0]) for row in await cur.fetchall()]
+
     @app_commands.command(name="loja", description="Veja os itens disponíveis na loja")
     async def loja(self, interaction: discord.Interaction):
-        text = "\n".join(f"**{item}** — {price:,} {config.CURRENCY_NAME}" for item,price in SHOP.items())
+        products = await self.get_products(interaction.guild_id)
+        text = "\\n".join(f"**{item}** — {price:,} {config.CURRENCY_NAME}" for item, price in products)
         await interaction.response.send_message(view=make_v2_panel(
             "🛍️ Loja Alpha",
-            text + "\n\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.",
+            (text or "A loja está vazia. A equipe pode adicionar produtos usando `/produto_criar`.") +
+            "\\n\\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.",
         ), ephemeral=True)
 
     @app_commands.command(name="comprar", description="Compre um item da loja")
-    @app_commands.choices(item=[app_commands.Choice(name=k, value=k) for k in SHOP])
-    async def comprar(self, interaction: discord.Interaction, item: app_commands.Choice[str]):
-        price = SHOP[item.value]; row = await get_user(interaction.guild_id, interaction.user.id)
-        if row['wallet'] < price: return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
+    @app_commands.describe(item="Produto que deseja comprar")
+    async def comprar(self, interaction: discord.Interaction, item: str):
+        products = await self.get_products(interaction.guild_id)
+        match = next(((name, price) for name, price in products if name.casefold() == item.casefold()), None)
+        if match is None:
+            return await interaction.response.send_message("Esse produto não está mais disponível na loja.", ephemeral=True)
+        product_name, price = match
+        row = await get_user(interaction.guild_id, interaction.user.id)
+        if row['wallet'] < price:
+            return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (price,interaction.guild_id,interaction.user.id))
-            await db.execute("INSERT INTO inventory(guild_id,user_id,item,quantity) VALUES(?,?,?,1) ON CONFLICT(guild_id,user_id,item) DO UPDATE SET quantity=quantity+1", (interaction.guild_id,interaction.user.id,item.value)); await db.commit()
-        await interaction.response.send_message(f"🛍️ Compra concluída: **{item.value}**! Confira `/inventario` em uma próxima atualização.")
+            await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (price, interaction.guild_id, interaction.user.id))
+            await db.execute("INSERT INTO inventory(guild_id,user_id,item,quantity) VALUES(?,?,?,1) ON CONFLICT(guild_id,user_id,item) DO UPDATE SET quantity=quantity+1", (interaction.guild_id, interaction.user.id, product_name))
+            await db.commit()
+        await interaction.response.send_message(f"🛍️ Compra concluída: **{product_name}**! Confira `/inventario`.")
+
+    @comprar.autocomplete("item")
+    async def comprar_autocomplete(self, interaction: discord.Interaction, current: str):
+        if not interaction.guild_id:
+            return []
+        products = await self.get_products(interaction.guild_id)
+        return [
+            app_commands.Choice(name=name[:100], value=name)
+            for name, price in products if current.casefold() in name.casefold()
+        ][:25]
 
     @app_commands.command(name="inventario", description="Veja os itens que você comprou")
     async def inventario(self, interaction: discord.Interaction):
