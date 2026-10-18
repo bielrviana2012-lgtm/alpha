@@ -44,6 +44,12 @@ async def init_community_tables():
                 UNIQUE(guild_id, name)
             )
         """)
+        # Migração: permite que uma categoria tenha mais de uma equipe/cargo.
+        cursor = await db.execute("PRAGMA table_info(ticket_categories)")
+        category_columns = {row[1] for row in await cursor.fetchall()}
+        if "staff_role_ids" not in category_columns:
+            await db.execute("ALTER TABLE ticket_categories ADD COLUMN staff_role_ids TEXT NOT NULL DEFAULT ''")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS ticket_records (
                 channel_id INTEGER PRIMARY KEY,
@@ -108,6 +114,22 @@ async def get_ticket_record(channel_id: int):
         )
         row = await cur.fetchone()
         return dict(row) if row else None
+
+
+def get_staff_role_ids(category: dict | None) -> list[int]:
+    """Retorna todos os cargos de equipe; mantém compatibilidade com categorias antigas."""
+    if not category:
+        return []
+    raw = str(category.get("staff_role_ids") or "").strip()
+    role_ids = []
+    for value in raw.split(","):
+        value = value.strip()
+        if value.isdigit() and int(value) not in role_ids:
+            role_ids.append(int(value))
+    legacy_id = category.get("staff_role_id")
+    if legacy_id and int(legacy_id) not in role_ids:
+        role_ids.insert(0, int(legacy_id))
+    return role_ids
 
 
 def parse_color(value: str) -> discord.Color:
@@ -313,21 +335,25 @@ class TicketControlView(discord.ui.LayoutView):
             return await interaction.response.send_message("Este ticket não está aberto.", ephemeral=True)
         categories = await get_ticket_categories(interaction.guild.id)
         category = next((item for item in categories if item["id"] == record["category_id"]), None)
-        if not interaction.user.guild_permissions.manage_channels and (
-            not category or category["staff_role_id"] not in [role.id for role in interaction.user.roles]
+        allowed_staff_ids = get_staff_role_ids(category)
+        if not interaction.user.guild_permissions.manage_channels and not any(
+            role.id in allowed_staff_ids for role in interaction.user.roles
         ):
-            return await interaction.response.send_message("Somente a equipe responsável pode assumir este ticket.", ephemeral=True)
+            return await interaction.response.send_message("Somente uma das equipes responsáveis pode assumir este ticket.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 "UPDATE ticket_records SET attendant_id=? WHERE channel_id=? AND status='open'",
                 (interaction.user.id, interaction.channel_id),
             )
             await db.commit()
-        staff_role = interaction.guild.get_role(category["staff_role_id"]) if category else None
-        staff_mention = staff_role.mention if staff_role else "Cargo da equipe não encontrado"
+        staff_roles = [
+            interaction.guild.get_role(role_id)
+            for role_id in get_staff_role_ids(category)
+        ]
+        staff_mentions = ", ".join(role.mention for role in staff_roles if role) or "Cargos das equipes não encontrados"
         description = (
             f"**👤 Solicitante:** <@{record['user_id']}>\n"
-            f"**🛡️ Equipe responsável:** {staff_mention}\n"
+            f"**🛡️ Equipes responsáveis:** {staff_mentions}\n"
             f"**🧑‍💼 Reivindicado por:** {interaction.user.mention}"
         )
         view = TicketControlView(
@@ -564,9 +590,11 @@ class Community(commands.Cog):
             if channel:
                 return await interaction.response.send_message(f"Você já tem um ticket aberto: {channel.mention}", ephemeral=True)
 
-        staff_role = guild.get_role(category["staff_role_id"])
-        if staff_role is None:
-            return await interaction.response.send_message("O cargo da equipe desta categoria não existe mais. Avise um administrador.", ephemeral=True)
+        staff_role_ids = get_staff_role_ids(category)
+        staff_roles = [guild.get_role(role_id) for role_id in staff_role_ids]
+        staff_roles = [role for role in staff_roles if role is not None]
+        if not staff_roles:
+            return await interaction.response.send_message("Os cargos das equipes desta categoria não existem mais. Avise um administrador.", ephemeral=True)
         bot_member = guild.me
         if bot_member is None:
             return await interaction.response.send_message("Não consegui verificar as permissões do bot.", ephemeral=True)
@@ -574,9 +602,12 @@ class Community(commands.Cog):
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, attach_files=True, embed_links=True),
-            staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True),
             bot_member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True),
         }
+        for staff_role in staff_roles:
+            overwrites[staff_role] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True, read_message_history=True, manage_messages=True
+            )
         parent = guild.get_channel(category["discord_category_id"]) if category["discord_category_id"] else None
         safe_name = re.sub(r"[^a-z0-9-]", "-", interaction.user.name.lower()).strip("-")[:35] or "membro"
         try:
@@ -607,15 +638,15 @@ class Community(commands.Cog):
             )
             await db.commit()
 
+        staff_mentions = ", ".join(role.mention for role in staff_roles)
         ticket_description = (
             f"{category['welcome_text'] or 'Explique como podemos ajudar.'}\n\n"
             f"**👤 Solicitante:** {interaction.user.mention}\n"
-            f"**🛡️ Equipe responsável:** {staff_role.mention}"
+            f"**🛡️ Equipes responsáveis:** {staff_mentions}"
         )
-        # Envia as menções em uma mensagem normal para notificar de verdade
-        # o solicitante e o cargo da equipe. Components V2 vai em outra mensagem.
+        # Envia as menções em uma mensagem normal para notificar todas as equipes.
         await channel.send(
-            content=f"🎫 Novo ticket aberto por {interaction.user.mention}. Equipe responsável: {staff_role.mention}",
+            content=f"🎫 Novo ticket aberto por {interaction.user.mention}. Equipes responsáveis: {staff_mentions}",
             allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
         await channel.send(
@@ -637,8 +668,9 @@ class Community(commands.Cog):
 
         categories = await get_ticket_categories(record["guild_id"])
         category = next((c for c in categories if c["id"] == record["category_id"]), None)
-        is_staff = interaction.user.guild_permissions.manage_channels or (
-            category is not None and category["staff_role_id"] in [r.id for r in interaction.user.roles]
+        allowed_staff_ids = get_staff_role_ids(category)
+        is_staff = interaction.user.guild_permissions.manage_channels or any(
+            role.id in allowed_staff_ids for role in interaction.user.roles
         )
         if interaction.user.id != record["user_id"] and not is_staff:
             return await interaction.response.send_message("Só o solicitante ou a equipe responsável pode fechar este ticket.", ephemeral=True)
@@ -731,7 +763,7 @@ class Community(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE ticket_settings SET panel_message_id=? WHERE guild_id=?", (message.id, guild.id))
             await db.commit()
-        self.bot.add_view(TicketPanelView(guild.id, categories), message_id=message.id)
+        self.bot.add_view(TicketPanelView(guild.id, categories, settings), message_id=message.id)
         await interaction.followup.send(
             f"✅ Painel de tickets publicado em {canal.mention} usando Components V2. "
             "Os membros podem selecionar uma categoria no menu.",
@@ -799,6 +831,7 @@ class Community(commands.Cog):
                 updates.append("emoji=?"); values.append(novo_emoji)
             if nova_equipe is not None:
                 updates.append("staff_role_id=?"); values.append(nova_equipe.id)
+                updates.append("staff_role_ids=?"); values.append(str(nova_equipe.id))
             if mensagem_inicial is not None:
                 updates.append("welcome_text=?"); values.append(mensagem_inicial)
             if updates:
@@ -807,6 +840,49 @@ class Community(commands.Cog):
                 await db.commit()
         await self.refresh_panel(guild)
         await interaction.response.send_message(f"✅ Categoria **{nome}** atualizada.", ephemeral=True)
+
+    @app_commands.command(name="ticket_categoria_equipes", description="Define até cinco cargos de equipe para uma categoria de ticket.")
+    @app_commands.default_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    async def ticket_categoria_equipes(
+        self,
+        interaction: discord.Interaction,
+        nome: app_commands.Range[str, 2, 80],
+        equipe1: discord.Role,
+        equipe2: discord.Role = None,
+        equipe3: discord.Role = None,
+        equipe4: discord.Role = None,
+        equipe5: discord.Role = None,
+    ):
+        guild = interaction.guild
+        if guild is None:
+            return await interaction.response.send_message("Este comando só funciona em um servidor.", ephemeral=True)
+        roles = []
+        for role in (equipe1, equipe2, equipe3, equipe4, equipe5):
+            if role is None:
+                continue
+            if role.is_default() or role.managed:
+                return await interaction.response.send_message("Escolha apenas cargos de equipe válidos.", ephemeral=True)
+            if role.id not in [item.id for item in roles]:
+                roles.append(role)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT id FROM ticket_categories WHERE guild_id=? AND name=?",
+                (guild.id, nome),
+            )
+            if await cur.fetchone() is None:
+                return await interaction.response.send_message("Categoria de ticket não encontrada.", ephemeral=True)
+            await db.execute(
+                "UPDATE ticket_categories SET staff_role_id=?, staff_role_ids=? WHERE guild_id=? AND name=?",
+                (roles[0].id, ",".join(str(role.id) for role in roles), guild.id, nome),
+            )
+            await db.commit()
+        await self.refresh_panel(guild)
+        mentions = ", ".join(role.mention for role in roles)
+        await interaction.response.send_message(
+            f"✅ Equipes da categoria **{nome}** atualizadas: {mentions}. Todas poderão ver, assumir e fechar os tickets dessa categoria.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="ticket_categoria_remover", description="Remove uma categoria do menu de tickets.")
     @app_commands.default_permissions(manage_channels=True)
