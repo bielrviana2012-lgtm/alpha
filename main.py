@@ -133,7 +133,6 @@ class AlphaBot(commands.Bot):
                 "ajuda",
                 "painel_tickets",
                 "ticket",
-                "painel_tickets",
                 "ticket_categoria_adicionar",
                 "ticket_categoria_editar",
                 "ticket_categoria_equipes",
@@ -251,6 +250,7 @@ async def ajuda(interaction: discord.Interaction):
             "`/painel_tickets` — publicar painel de tickets\n"
             "`/ticket_categoria_editar` — editar categoria\n"
             "`/ticket_categoria_adicionar` — criar categoria\n"
+            "`/ticket_categoria_equipes` — configurar até 5 equipes por categoria\n"
             "`/ticket_categoria_remover` — remover categoria\n"
             "`/ticket_configurar_avaliacoes` — configurar avaliações\n"
             "`/fechar_ticket` — fechar o ticket atual",
