@@ -14,8 +14,8 @@ from discord.ext import commands
 from database import DB_PATH, ensure_user, get_user
 import config
 
-MIN_BET = 10
-MAX_BET = 1000
+MIN_BET = 1
+MAX_BET = 1000000000
 
 
 async def init_betting_db():
@@ -67,6 +67,21 @@ async def set_betting_enabled(guild_id: int, user_id: int, enabled: bool):
 class OptionalBetting(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def resolve_wager(self, interaction: discord.Interaction, wager):
+        """Usa toda a carteira quando o membro não informa uma aposta."""
+        if wager is not None:
+            return wager
+        if interaction.guild_id is None:
+            return 0
+        await ensure_user(interaction.guild_id, interaction.user.id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                (interaction.guild_id, interaction.user.id),
+            )
+            row = await cur.fetchone()
+        return max(0, row[0] if row else 0)
 
     async def check_ready(self, interaction: discord.Interaction) -> bool:
         if interaction.guild_id is None:
@@ -168,11 +183,12 @@ class OptionalBetting(commands.Cog):
     @app_commands.guild_only()
     async def apostar_cara_coroa(
         self, interaction: discord.Interaction,
-        valor: app_commands.Range[int, MIN_BET, MAX_BET],
         escolha: app_commands.Choice[str],
+        valor: app_commands.Range[int, MIN_BET, MAX_BET] = None,
     ):
         if not await self.check_ready(interaction):
             return
+        valor = await self.resolve_wager(interaction, valor)
         result = random.choice(("cara", "coroa"))
         won = escolha.value == result
         payout = valor * 2 if won else 0
@@ -184,11 +200,12 @@ class OptionalBetting(commands.Cog):
     @app_commands.guild_only()
     async def apostar_sorte(
         self, interaction: discord.Interaction,
-        valor: app_commands.Range[int, MIN_BET, MAX_BET],
         numero: app_commands.Range[int, 1, 5],
+        valor: app_commands.Range[int, MIN_BET, MAX_BET] = None,
     ):
         if not await self.check_ready(interaction):
             return
+        valor = await self.resolve_wager(interaction, valor)
         drawn = random.randint(1, 5)
         won = numero == drawn
         payout = valor * 4 if won else 0
@@ -200,10 +217,11 @@ class OptionalBetting(commands.Cog):
     @app_commands.guild_only()
     async def apostar_slots(
         self, interaction: discord.Interaction,
-        valor: app_commands.Range[int, MIN_BET, MAX_BET],
+        valor: app_commands.Range[int, MIN_BET, MAX_BET] = None,
     ):
         if not await self.check_ready(interaction):
             return
+        valor = await self.resolve_wager(interaction, valor)
         symbols = [random.choice(("🍒", "🍋", "⭐", "💎", "🔔")) for _ in range(3)]
         if symbols[0] == symbols[1] == symbols[2]:
             payout = valor * 4
