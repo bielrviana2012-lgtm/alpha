@@ -23,17 +23,23 @@ class Economy(commands.Cog):
                     PRIMARY KEY (guild_id, name)
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS shop_guilds (
+                    guild_id INTEGER PRIMARY KEY
+                )
+            """)
             await db.commit()
 
     async def ensure_shop(self, guild_id: int):
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute("SELECT COUNT(*) FROM shop_products WHERE guild_id=?", (guild_id,))
-            count = (await cur.fetchone())[0]
-            if count == 0:
+            cur = await db.execute("SELECT 1 FROM shop_guilds WHERE guild_id=?", (guild_id,))
+            initialized = await cur.fetchone()
+            if not initialized:
                 await db.executemany(
                     "INSERT OR IGNORE INTO shop_products(guild_id,name,price) VALUES(?,?,?)",
                     [(guild_id, name, price) for name, price in DEFAULT_SHOP.items()],
                 )
+                await db.execute("INSERT OR IGNORE INTO shop_guilds(guild_id) VALUES(?)", (guild_id,))
                 await db.commit()
 
     async def get_products(self, guild_id: int):
