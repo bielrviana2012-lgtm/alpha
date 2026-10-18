@@ -105,8 +105,13 @@ class AlphaBot(commands.Bot):
 
             guild = discord.Object(id=guild_id)
 
-            # Disponibiliza os comandos globais no servidor escolhido.
+            # Copia os comandos carregados para o servidor escolhido.
+            # Depois remove os comandos globais antigos para evitar que
+            # os mesmos slash commands apareçam duplicados no Discord.
             self.tree.copy_global_to(guild=guild)
+
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
 
             synced = await self.tree.sync(guild=guild)
 
