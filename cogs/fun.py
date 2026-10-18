@@ -137,6 +137,7 @@ class BlackjackView(discord.ui.LayoutView):
         self.player_cards = [self.deck.pop(), self.deck.pop()]
         self.dealer_cards = [self.deck.pop(), self.deck.pop()]
         self.result_text = ""
+        self.message = None
         self._build()
 
     @staticmethod
@@ -282,8 +283,22 @@ class BlackjackView(discord.ui.LayoutView):
         if self.done:
             return
         self.done = True
-        self.result_text = "⌛ A partida expirou. A aposta já reservada não será devolvida automaticamente."
+        self.result_text = "⌛ A partida expirou."
+        if self.modo == "bet" and self.aposta > 0:
+            await ensure_user(self.guild_id, self.owner_id)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
+                    (self.aposta, self.guild_id, self.owner_id),
+                )
+                await db.commit()
+            self.result_text += f" Sua aposta de {self.aposta:,} {config.CURRENCY_NAME} foi devolvida."
         self._build()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 class QuizView(discord.ui.LayoutView):
@@ -614,6 +629,7 @@ class Fun(commands.Cog):
             aposta=valor_aposta,
         )
         await interaction.response.send_message(view=partida)
+        partida.message = await interaction.original_response()
 
     @app_commands.command(name="caraoucoroa", description="Adivinhe o resultado da moeda")
     @app_commands.choices(
