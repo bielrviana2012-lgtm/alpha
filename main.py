@@ -28,6 +28,7 @@ logger = logging.getLogger("Sr.Alpha")
 
 EXTENSIONS = (
     "cogs.economy",
+      "cogs.giveaways",
     "cogs.optional_betting",
     "cogs.ping_roles",
     "cogs.color_roles",
