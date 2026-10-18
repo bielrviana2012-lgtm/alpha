@@ -32,6 +32,22 @@ def embed_jogo(titulo, descricao, cor=COR):
     layout.add_item(panel)
     return layout
 
+async def aposta_efetiva(interaction, modo, aposta):
+    """Se a aposta ficar vazia, usa toda a carteira no modo de moedas."""
+    if modo != "bet" or aposta is not None:
+        return aposta or 0
+    if interaction.guild is None:
+        return 0
+    await ensure_user(interaction.guild.id, interaction.user.id)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+            (interaction.guild.id, interaction.user.id),
+        )
+        row = await cursor.fetchone()
+    return max(0, row[0] if row else 0)
+
+
 async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
                          premio=0, empate=False):
     """Premio é o retorno TOTAL, incluindo a aposta devolvida."""
@@ -52,12 +68,6 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
     if aposta is None or aposta < 1:
         return await interaction.response.send_message(
             "Escolha uma aposta de pelo menos 1 Alpha Coin.",
-            ephemeral=True,
-        )
-
-    if aposta > 10000:
-        return await interaction.response.send_message(
-            "O limite por jogo é de 10.000 Alpha Coins.",
             ephemeral=True,
         )
 
@@ -424,8 +434,9 @@ class Fun(commands.Cog):
         interaction: discord.Interaction,
         escolha: app_commands.Choice[str],
         modo: app_commands.Choice[str],
-        aposta: app_commands.Range[int, 1, 10000] = None,
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         jogador = escolha.value
         bot = random.choice(["pedra", "papel", "tesoura"])
 
@@ -468,6 +479,7 @@ class Fun(commands.Cog):
         escolha: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choice(["Cara", "Coroa"])
         venceu = escolha.value == resultado
         premio = (aposta or 0) * 2 if venceu else 0
@@ -488,6 +500,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.randint(1, 6)
         venceu = resultado >= 4
         premio = (aposta or 0) * 2 if venceu else 0
@@ -507,6 +520,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         simbolos = ["🍒", "💎", "⭐", "🍀", "🔔"]
         rolos = [random.choice(simbolos) for _ in range(3)]
         iguais = len(set(rolos)) == 1
@@ -540,6 +554,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choices(
             ["vermelho", "preto", "verde"],
             weights=[5, 5, 1],
@@ -564,6 +579,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         seu = random.randint(1, 6)
         alpha = random.randint(1, 6)
         empate = seu == alpha
@@ -646,6 +662,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choice(["Cara", "Coroa"])
         venceu = escolha.value == resultado
 
@@ -664,6 +681,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         evento = random.choices(
             ["jackpot", "premio", "nada"],
             weights=[1, 4, 5],
@@ -701,6 +719,7 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        aposta = await aposta_efetiva(interaction, modo.value, aposta)
         seu = random.randint(1, 100)
         alpha = random.randint(1, 100)
         empate = seu == alpha
