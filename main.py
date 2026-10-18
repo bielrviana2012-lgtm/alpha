@@ -33,7 +33,6 @@ EXTENSIONS = (
     "cogs.moderation",
     "cogs.community",
     "cogs.fun",
-    "cogs.ai_chat",
     "cogs.levels",
     "cogs.updates",
     "cogs.embed_builder",
@@ -258,7 +257,6 @@ async def ajuda(interaction: discord.Interaction):
             "`/listar_pings` — listar opções cadastradas",
         ),
         ("🎮 Diversão e níveis", "`/quiz` `/ppt` `/perfil` `/level`"),
-        ("✨ Inteligência Artificial", "`/perguntar` — assistente de IA do Sr.Alpha"),
         ("🚀 Atualizações", "`/anunciar_atualizacao` — anunciar novidades do bot"),
         ("🧩 Administração", "`/criar_embed` — criar um painel personalizado com Components V2"),
     ]
