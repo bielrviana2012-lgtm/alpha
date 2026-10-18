@@ -132,6 +132,12 @@ class AlphaBot(commands.Bot):
             # Verifica comandos importantes.
             expected_commands = {
                 "ajuda",
+                "apostar_ativar",
+                "apostar_desativar",
+                "apostar_cara_coroa",
+                "apostar_sorte",
+                "apostar_slots",
+                "apostar_historico",
                 "painel_tickets",
                 "ticket",
                 "ticket_categoria_adicionar",
