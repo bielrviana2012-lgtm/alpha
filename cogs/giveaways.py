@@ -11,16 +11,31 @@ log = logging.getLogger("Sr.Alpha.Giveaways")
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 
 
-class GiveawayView(discord.ui.View):
+class GiveawayView(discord.ui.LayoutView):
     def __init__(self, prize: str, host_id: int):
         super().__init__(timeout=None)
         self.prize = prize
         self.host_id = host_id
         self.entries: set[int] = set()
         self.ended = False
+        self.container = discord.ui.Container(accent_colour=PURPLE)
+        self.container.add_item(discord.ui.TextDisplay(f"# 🎉 SORTEIO: {prize}"))
+        self.container.add_item(discord.ui.Separator())
+        self.container.add_item(discord.ui.TextDisplay(f"Organizado por <@{host_id}>"))
+        self.container.add_item(discord.ui.Separator())
+        self.add_item(self.container)
+        self.button = discord.ui.Button(
+            label="Participar do sorteio",
+            emoji="🎉",
+            style=discord.ButtonStyle.primary,
+            custom_id="alpha_giveaway_join",
+        )
+        self.button.callback = self.join
+        row = discord.ui.ActionRow()
+        row.add_item(self.button)
+        self.add_item(row)
 
-    @discord.ui.button(label="Participar do sorteio", emoji="🎉", style=discord.ButtonStyle.primary, custom_id="alpha_giveaway_join")
-    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def join(self, interaction: discord.Interaction):
         if self.ended:
             return await interaction.response.send_message("Este sorteio já terminou.", ephemeral=True)
         if interaction.user.bot:
@@ -33,9 +48,7 @@ class GiveawayView(discord.ui.View):
 
     async def finish(self, message: discord.Message, winners_count: int):
         self.ended = True
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
+        self.button.disabled = True
         eligible = list(self.entries)
         winners = random.sample(eligible, min(winners_count, len(eligible))) if eligible else []
         result = (
@@ -93,20 +106,13 @@ class Giveaways(commands.Cog):
         prize = premio.strip()
         ends_at = datetime.now(timezone.utc) + timedelta(minutes=duracao_minutos)
         view = GiveawayView(prize, interaction.user.id)
-        layout = discord.ui.LayoutView(timeout=None)
-        container = discord.ui.Container(accent_colour=PURPLE)
-        container.add_item(discord.ui.TextDisplay(f"# 🎉 SORTEIO: {prize}"))
-        container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay(
-            f"Organizado por {interaction.user.mention}\\n"
-            f"🏆 Vencedores: **{vencedores}**\\n"
-            f"⏳ Termina: <t:{int(ends_at.timestamp())}:R> (<t:{int(ends_at.timestamp())}:f>)\\n"
-            f"👥 Clique no botão abaixo para participar!"
+        view.container.add_item(discord.ui.TextDisplay(
+            f"🏆 Vencedores: **{vencedores}**\n"
+            f"⏳ Termina: <t:{int(ends_at.timestamp())}:R> (<t:{int(ends_at.timestamp())}:f>)\n"
+            "👥 Clique no botão abaixo para participar!"
         ))
-        layout.add_item(container)
-        layout.add_item(view)
         try:
-            message = await destination.send(view=layout, allowed_mentions=discord.AllowedMentions.none())
+            message = await destination.send(view=view, allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:
             log.exception("Erro ao publicar sorteio.")
             return await interaction.response.send_message("Não consegui publicar o sorteio nesse canal.", ephemeral=True)
