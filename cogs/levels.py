@@ -36,15 +36,7 @@ class Levels(commands.Cog):
             new_xp -= needed
             level += 1
 
-            # Mantém o aviso de evolução.
-            try:
-                await message.channel.send(
-                    f"🎉 {message.author.mention} subiu para "
-                    f"o **nível {level}**!",
-                    delete_after=12,
-                )
-            except discord.HTTPException:
-                pass
+            # O nível é atualizado silenciosamente, sem mensagens automáticas.
 
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
