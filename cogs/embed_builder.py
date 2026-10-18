@@ -28,6 +28,7 @@ class EmbedBuilder(commands.Cog):
         descricao="Descrição principal do painel",
         canal="Canal onde o painel será enviado",
         cor="Cor hexadecimal, exemplo: #9167FF",
+        imagem="Link direto da imagem (opcional)",
         campo1_titulo="Título do campo 1",
         campo1_descricao="Descrição do campo 1",
         campo2_titulo="Título do campo 2",
@@ -56,6 +57,7 @@ class EmbedBuilder(commands.Cog):
         descricao: app_commands.Range[str, 1, 2000],
         canal: discord.TextChannel,
         cor: str = "#9167FF",
+        imagem: str = None,
         campo1_titulo: str = None,
         campo1_descricao: str = None,
         campo2_titulo: str = None,
@@ -110,6 +112,19 @@ class EmbedBuilder(commands.Cog):
             cor = "".join(char * 2 for char in cor)
 
         accent = discord.Color(int(cor, 16))
+
+        # Valida o link opcional da imagem.
+        imagem = imagem.strip() if imagem else ""
+        if imagem:
+            from urllib.parse import urlparse
+
+            parsed_url = urlparse(imagem)
+            if parsed_url.scheme not in ("https", "http") or not parsed_url.netloc:
+                await interaction.response.send_message(
+                    "❌ Link de imagem inválido. Use um link completo começando com https://.",
+                    ephemeral=True,
+                )
+                return
 
         # Organiza os campos separados.
         campos_recebidos = [
@@ -208,6 +223,20 @@ class EmbedBuilder(commands.Cog):
         container.add_item(
             discord.ui.TextDisplay(descricao)
         )
+
+        if imagem:
+            try:
+                container.add_item(
+                    discord.ui.MediaGallery(
+                        discord.MediaGalleryItem(imagem)
+                    )
+                )
+            except (TypeError, ValueError):
+                await interaction.response.send_message(
+                    "❌ Não consegui usar esse link. Informe um link direto para uma imagem.",
+                    ephemeral=True,
+                )
+                return
 
         for field_title, field_text in parsed_fields:
             container.add_item(discord.ui.Separator())
