@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import aiosqlite
-from database import DB_PATH, get_user, ensure_user
+from database import DB_PATH, get_user, ensure_user, has_infinite_coins, format_coins
 import config
 from cogs.ui_v2 import make_v2_panel
 
@@ -59,9 +59,9 @@ class Economy(commands.Cog):
             f"💰 Economia de {target.display_name}",
             f"Confira o patrimônio de {target.mention}.",
             sections=[
-                ("👛 Carteira", f"{row['wallet']:,} {config.CURRENCY_NAME}"),
-                ("🏦 Banco", f"{row['bank']:,} {config.CURRENCY_NAME}"),
-                ("💎 Patrimônio total", f"{row['wallet']+row['bank']:,} {config.CURRENCY_NAME}"),
+                ("👛 Carteira", f"{format_coins(target.id, row['wallet'])} {config.CURRENCY_NAME}"),
+                ("🏦 Banco", f"{format_coins(target.id, row['bank'])} {config.CURRENCY_NAME}"),
+                ("💎 Patrimônio total", f"{format_coins(target.id, row['wallet']+row['bank'])} {config.CURRENCY_NAME}"),
             ],
         )
         await interaction.response.send_message(view=panel)
@@ -109,7 +109,7 @@ class Economy(commands.Cog):
         await interaction.response.send_message(view=make_v2_panel(
             "🎁 Recompensa diária recebida",
             f"Você recebeu **{reward:,} {config.CURRENCY_NAME}**!\n\n"
-            f"💰 **Carteira atual:** {saldo_atual:,} {config.CURRENCY_NAME}",
+            f"💰 **Carteira atual:** {format_coins(interaction.user.id, saldo_atual)} {config.CURRENCY_NAME}",
         ))
 
     @app_commands.command(name="trabalhar", description="Faça um trabalho e ganhe moedas (cooldown diário)")
@@ -127,9 +127,14 @@ class Economy(commands.Cog):
     async def move_money(self, interaction, amount, column_from, column_to):
         if amount <= 0: return await interaction.response.send_message("O valor precisa ser maior que zero.", ephemeral=True)
         row = await get_user(interaction.guild_id, interaction.user.id)
-        if row[column_from] < amount: return await interaction.response.send_message("Você não tem saldo suficiente.", ephemeral=True)
+        infinite_wallet = has_infinite_coins(interaction.user.id) and column_from == "wallet"
+        if not infinite_wallet and row[column_from] < amount: return await interaction.response.send_message("Você não tem saldo suficiente.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(f"UPDATE users SET {column_from}={column_from}-?, {column_to}={column_to}+? WHERE guild_id=? AND user_id=?", (amount,amount,interaction.guild_id,interaction.user.id)); await db.commit()
+            if infinite_wallet:
+                await db.execute(f"UPDATE users SET {column_to}={column_to}+? WHERE guild_id=? AND user_id=?", (amount,interaction.guild_id,interaction.user.id))
+            else:
+                await db.execute(f"UPDATE users SET {column_from}={column_from}-?, {column_to}={column_to}+? WHERE guild_id=? AND user_id=?", (amount,amount,interaction.guild_id,interaction.user.id))
+            await db.commit()
         await interaction.response.send_message(f"✅ Transferência concluída: **{amount} {config.CURRENCY_NAME}**.")
 
     @app_commands.command(name="depositar", description="Deposite moedas no banco")
@@ -142,9 +147,11 @@ class Economy(commands.Cog):
     async def transferir(self, interaction: discord.Interaction, membro: discord.Member, valor: app_commands.Range[int, 1, 1000000000]):
         if membro.bot or membro.id == interaction.user.id: return await interaction.response.send_message("Escolha outro membro que não seja um bot.", ephemeral=True)
         row = await get_user(interaction.guild_id, interaction.user.id); await ensure_user(interaction.guild_id, membro.id)
-        if row['wallet'] < valor: return await interaction.response.send_message("Saldo insuficiente na carteira.", ephemeral=True)
+        infinite = has_infinite_coins(interaction.user.id)
+        if not infinite and row['wallet'] < valor: return await interaction.response.send_message("Saldo insuficiente na carteira.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (valor,interaction.guild_id,interaction.user.id))
+            if not infinite:
+                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (valor,interaction.guild_id,interaction.user.id))
             await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (valor,interaction.guild_id,membro.id)); await db.commit()
         await interaction.response.send_message(f"💸 {interaction.user.mention} enviou **{valor} {config.CURRENCY_NAME}** para {membro.mention}.")
 
@@ -153,7 +160,7 @@ class Economy(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT user_id, wallet+bank AS total FROM users WHERE guild_id=? ORDER BY total DESC LIMIT 10", (interaction.guild_id,)); rows = await cur.fetchall()
         if not rows: return await interaction.response.send_message("Ainda não há dados de economia.", ephemeral=True)
-        lines = [f"**{i}.** <@{uid}> — {total:,} {config.CURRENCY_NAME}" for i,(uid,total) in enumerate(rows,1)]
+        lines = [f"**{i}.** <@{uid}> — {format_coins(uid, total)} {config.CURRENCY_NAME}" for i,(uid,total) in enumerate(rows,1)]
         await interaction.response.send_message(view=make_v2_panel(
             "🏆 Ranking Alpha",
             "\n".join(lines),
@@ -238,10 +245,12 @@ class Economy(commands.Cog):
             return await interaction.response.send_message("Esse produto não está mais disponível na loja.", ephemeral=True)
         product_name, price = match
         row = await get_user(interaction.guild_id, interaction.user.id)
-        if row['wallet'] < price:
+        infinite = has_infinite_coins(interaction.user.id)
+        if not infinite and row['wallet'] < price:
             return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (price, interaction.guild_id, interaction.user.id))
+            if not infinite:
+                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (price, interaction.guild_id, interaction.user.id))
             await db.execute("INSERT INTO inventory(guild_id,user_id,item,quantity) VALUES(?,?,?,1) ON CONFLICT(guild_id,user_id,item) DO UPDATE SET quantity=quantity+1", (interaction.guild_id, interaction.user.id, product_name))
             await db.commit()
         await interaction.response.send_message(f"🛍️ Compra concluída: **{product_name}**! Confira `/inventario`.")
