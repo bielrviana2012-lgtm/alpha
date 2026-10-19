@@ -38,6 +38,7 @@ EXTENSIONS = (
     "cogs.levels",
     "cogs.updates",
     "cogs.embed_builder",
+    "cogs.expansion",
 )
 
 
