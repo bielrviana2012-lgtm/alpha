@@ -183,13 +183,24 @@ class SuggestionView(discord.ui.LayoutView):
         if not interaction.guild_id or not interaction.message:
             return await interaction.response.send_message("Este botão só funciona dentro do servidor.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
+            # O ID da mensagem é único no Discord; usa também uma busca
+            # compatível caso o registro tenha um guild_id antigo/incorreto.
             cur = await db.execute(
                 "SELECT id,text,user_id,status,admin_id,response FROM suggestions WHERE message_id=? AND guild_id=?",
                 (interaction.message.id, interaction.guild_id),
             )
             row = await cur.fetchone()
             if not row:
-                return await interaction.response.send_message("Não encontrei esta sugestão no banco de dados.", ephemeral=True)
+                cur = await db.execute(
+                    "SELECT id,text,user_id,status,admin_id,response FROM suggestions WHERE message_id=?",
+                    (interaction.message.id,),
+                )
+                row = await cur.fetchone()
+            if not row:
+                return await interaction.response.send_message(
+                    "Não encontrei esta sugestão no banco de dados. Ela pode ser antiga ou ter sido perdida numa reinicialização do banco. Publique uma nova sugestão para habilitar a votação.",
+                    ephemeral=True,
+                )
             sid, texto, autor_id, status, admin_id, response = row
             cur = await db.execute(
                 "SELECT vote FROM suggestion_votes WHERE suggestion_id=? AND user_id=?",
@@ -936,10 +947,14 @@ class Community(commands.Cog):
             sid = cur.lastrowid
             await db.commit()
 
-        msg = await channel.send(view=SuggestionView(sid, texto, interaction.user.id))
+        # Publica sem botões primeiro para evitar cliques antes de gravar
+        # o ID da mensagem no banco de dados.
+        msg = await channel.send(content=f"💡 **Nova sugestão #{sid}**")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE suggestions SET message_id=? WHERE id=?", (msg.id, sid))
             await db.commit()
+
+        await msg.edit(content=None, view=SuggestionView(sid, texto, interaction.user.id))
 
         await interaction.followup.send(
             f"✅ Sua sugestão foi enviada em {channel.mention}!",
