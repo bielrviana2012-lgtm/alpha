@@ -127,7 +127,7 @@ class Economy(commands.Cog):
     async def move_money(self, interaction, amount, column_from, column_to):
         if amount <= 0: return await interaction.response.send_message("O valor precisa ser maior que zero.", ephemeral=True)
         row = await get_user(interaction.guild_id, interaction.user.id)
-        infinite_wallet = has_infinite_coins(interaction.user.id) and column_from == "wallet"
+        infinite_wallet = has_infinite_coins(interaction.user.id)
         if not infinite_wallet and row[column_from] < amount: return await interaction.response.send_message("Você não tem saldo suficiente.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
             if infinite_wallet:
