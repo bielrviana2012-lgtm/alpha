@@ -349,7 +349,7 @@ class Economy(commands.Cog):
                 "gravado após o deploy da auditoria; ele não recupera movimentações antigas."
             )
         else:
-            desc = "\\n".join(
+            desc = "\n".join(
                 f"`{created_at}` • {old:,} → **{new:,}** "
                 f"({'+' if delta > 0 else ''}{delta:,})"
                 for old, new, delta, created_at in rows
@@ -357,7 +357,7 @@ class Economy(commands.Cog):
         saldo = current[0] if current else 0
         panel = make_v2_panel(
             f"🧾 Histórico de moedas • {membro.display_name}",
-            f"**ID:** {membro.id}\\n**Carteira atual:** {format_coins(membro.id, saldo)} {config.CURRENCY_NAME}\\n\\n{desc}",
+            f"**ID:** {membro.id}\n**Carteira atual:** {format_coins(membro.id, saldo)} {config.CURRENCY_NAME}\n\n{desc}",
         )
         await interaction.response.send_message(view=panel, ephemeral=True)
 
