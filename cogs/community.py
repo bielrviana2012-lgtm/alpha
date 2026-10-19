@@ -979,8 +979,18 @@ class Community(commands.Cog):
         interaction: discord.Interaction,
         descricao: app_commands.Range[str, 10, 1000],
         passos: str = "",
+        imagem_url: str = "",
     ):
         await interaction.response.defer(ephemeral=True, thinking=True)
+
+        imagem_url = imagem_url.strip()
+        if imagem_url and not (
+            imagem_url.startswith("https://") or imagem_url.startswith("http://")
+        ):
+            return await interaction.followup.send(
+                "⚠️ O link da imagem precisa começar com http:// ou https://.",
+                ephemeral=True,
+            )
 
         channel_id = getattr(config, "BUG_REPORT_CHANNEL_ID", 0) or config.LOG_CHANNEL_ID
         channel = interaction.guild.get_channel(channel_id) if channel_id else None
@@ -1008,6 +1018,9 @@ class Community(commands.Cog):
         if passos.strip():
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(f"**Como reproduzir / informações adicionais**\n{passos[:1500]}"))
+        if imagem_url:
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**Imagem / captura do bug:** [Abrir imagem]({imagem_url})"))
         panel.add_item(discord.ui.Separator())
         panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Relatos"))
         layout.add_item(panel)
