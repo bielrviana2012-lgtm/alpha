@@ -688,9 +688,9 @@ class Fun(commands.Cog):
         )[0]
         multiplicador = {"jackpot": 5, "premio": 2, "nada": 0}[evento]
         descricao = {
-            "jackpot": "🌟 O baú tinha um tesouro lendário! Retorno de 5x.",
-            "premio": "🎁 Você encontrou um tesouro! Retorno de 2x.",
-            "nada": "📦 O baú estava vazio...",
+            "jackpot": "🌟 O baú tinha um tesouro lendário! Retorno total de 5x a aposta (aposta incluída).",
+            "premio": "🎁 Você encontrou um tesouro! Retorno total de 2x a aposta (aposta incluída).",
+            "nada": "📦 O baú estava vazio... Você perdeu a aposta.",
         }[evento]
 
         await finalizar_jogo(
