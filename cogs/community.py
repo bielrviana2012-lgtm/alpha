@@ -970,6 +970,65 @@ class Community(commands.Cog):
             await db.commit()
         await interaction.response.send_message(f"✅ As avaliações serão publicadas em {canal.mention}.", ephemeral=True)
 
+    # ----------------- Bug reports -----------------
+
+    @app_commands.command(name="relatar_bug", description="Relate um erro ou problema encontrado no Sr.Alpha")
+    @app_commands.guild_only()
+    async def relatar_bug(
+        self,
+        interaction: discord.Interaction,
+        descricao: app_commands.Range[str, 10, 1000],
+        passos: str = "",
+    ):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        channel_id = getattr(config, "BUG_REPORT_CHANNEL_ID", 0) or config.LOG_CHANNEL_ID
+        channel = interaction.guild.get_channel(channel_id) if channel_id else None
+        if channel is None and channel_id:
+            try:
+                channel = await interaction.client.fetch_channel(channel_id)
+            except discord.HTTPException:
+                channel = None
+
+        if channel is None or not hasattr(channel, "send"):
+            return await interaction.followup.send(
+                "⚠️ A equipe ainda não configurou um canal para relatos de bugs. "
+                "Peça a um administrador para definir BUG_REPORT_CHANNEL_ID no Railway.",
+                ephemeral=True,
+            )
+
+        layout = discord.ui.LayoutView(timeout=None)
+        panel = discord.ui.Container(accent_colour=discord.Color.orange())
+        panel.add_item(discord.ui.TextDisplay("# 🐛 Novo relato de bug"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(f"**Relatado por:** {interaction.user.mention} (`{interaction.user.id}`)"))
+        panel.add_item(discord.ui.TextDisplay(f"**Servidor:** {interaction.guild.name} (`{interaction.guild.id}`)"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay(f"**Descrição do problema**\n{descricao}"))
+        if passos.strip():
+            panel.add_item(discord.ui.Separator())
+            panel.add_item(discord.ui.TextDisplay(f"**Como reproduzir / informações adicionais**\n{passos[:1500]}"))
+        panel.add_item(discord.ui.Separator())
+        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Relatos"))
+        layout.add_item(panel)
+
+        try:
+            await channel.send(
+                view=layout,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except discord.HTTPException:
+            log.exception("Falha ao enviar relato de bug para o canal %s.", channel_id)
+            return await interaction.followup.send(
+                "❌ Não consegui enviar o relato. Avise a equipe ou tente novamente mais tarde.",
+                ephemeral=True,
+            )
+
+        await interaction.followup.send(
+            f"✅ Seu relato foi enviado para a equipe em {channel.mention}. Obrigado por ajudar a melhorar o Sr.Alpha!",
+            ephemeral=True,
+        )
+
     # ----------------- Suggestions (preserved) -----------------
 
     @app_commands.command(name="sugerir", description="Envie uma sugestão para a comunidade")
