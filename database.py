@@ -29,6 +29,24 @@ async def init_db():
             last_daily TEXT, last_work TEXT,
             PRIMARY KEY (guild_id, user_id)
         );
+        CREATE TABLE IF NOT EXISTS wallet_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            old_wallet INTEGER NOT NULL,
+            new_wallet INTEGER NOT NULL,
+            delta INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TRIGGER IF NOT EXISTS audit_wallet_changes
+        AFTER UPDATE OF wallet ON users
+        WHEN OLD.wallet != NEW.wallet
+        BEGIN
+            INSERT INTO wallet_transactions
+                (guild_id, user_id, old_wallet, new_wallet, delta)
+            VALUES
+                (NEW.guild_id, NEW.user_id, OLD.wallet, NEW.wallet, NEW.wallet - OLD.wallet);
+        END;
         CREATE TABLE IF NOT EXISTS warnings (
             id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL, moderator_id INTEGER NOT NULL,
