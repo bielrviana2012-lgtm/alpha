@@ -37,14 +37,26 @@ class AlphaExpansion(commands.Cog):
     async def presentear(self, interaction: discord.Interaction, membro: discord.Member, valor: app_commands.Range[int,1,1000000]):
         if membro.bot or membro.id == interaction.user.id:
             return await interaction.response.send_message("Escolha outro membro humano.", ephemeral=True)
-        user = await get_user(interaction.guild_id, interaction.user.id)
-        if not has_infinite_coins(interaction.user.id) and user["wallet"] < valor:
-            return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
+        await get_user(interaction.guild_id, interaction.user.id)
+        await get_user(interaction.guild_id, membro.id)
+        infinite = has_infinite_coins(interaction.user.id)
         async with aiosqlite.connect(DB_PATH) as db:
-            if not has_infinite_coins(interaction.user.id):
-                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (valor, interaction.guild_id, interaction.user.id))
-            await db.execute("INSERT OR IGNORE INTO users(guild_id,user_id) VALUES(?,?)", (interaction.guild_id, membro.id))
-            await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (valor, interaction.guild_id, membro.id))
+            await db.execute("BEGIN IMMEDIATE")
+            if not infinite:
+                cur = await db.execute(
+                    "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                    (valor, interaction.guild_id, interaction.user.id, valor),
+                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "Você não tem moedas suficientes na carteira. Nenhum presente foi enviado.",
+                        ephemeral=True,
+                    )
+            await db.execute(
+                "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                (valor, interaction.guild_id, membro.id),
+            )
             await db.commit()
         await interaction.response.send_message(f"🎁 {interaction.user.mention} presenteou {membro.mention} com **{valor:,} {config.CURRENCY_NAME}**!")
 
@@ -218,12 +230,28 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="masmorra", description="Enfrente uma criatura e tente ganhar moedas")
     async def masmorra(self, interaction: discord.Interaction):
-        user=await get_user(interaction.guild_id,interaction.user.id)
-        if not has_infinite_coins(interaction.user.id) and user["wallet"]<50: return await interaction.response.send_message("Você precisa de 50 moedas para entrar.",ephemeral=True)
-        win=random.random()<0.58; reward=random.randint(90,220) if win else 0
+        await get_user(interaction.guild_id, interaction.user.id)
+        infinite = has_infinite_coins(interaction.user.id)
+        win = random.random() < 0.58
+        reward = random.randint(90, 220) if win else 0
         async with aiosqlite.connect(DB_PATH) as db:
-            if not has_infinite_coins(interaction.user.id): await db.execute("UPDATE users SET wallet=wallet-50 WHERE guild_id=? AND user_id=?",(interaction.guild_id,interaction.user.id))
-            if reward: await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",(reward,interaction.guild_id,interaction.user.id))
+            await db.execute("BEGIN IMMEDIATE")
+            if not infinite:
+                cur = await db.execute(
+                    "UPDATE users SET wallet=wallet-50 WHERE guild_id=? AND user_id=? AND wallet>=50",
+                    (interaction.guild_id, interaction.user.id),
+                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "Você precisa ter pelo menos 50 moedas para entrar. Nenhuma moeda foi retirada.",
+                        ephemeral=True,
+                    )
+            if reward:
+                await db.execute(
+                    "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                    (reward, interaction.guild_id, interaction.user.id),
+                )
             await db.commit()
         await interaction.response.send_message(f"## 🏰 Masmorra Alpha\n{'🏆 Vitória! Você encontrou' if win else '👾 A criatura venceu. Você perdeu a entrada de'} **{reward if win else 50} {config.CURRENCY_NAME}**.")
 
