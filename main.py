@@ -435,3 +435,5 @@ if __name__ == "__main__":
         token,
         log_handler=None,
     )
+
+# Commit de gatilho para novo deploy no Railway.
