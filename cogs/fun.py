@@ -6,7 +6,7 @@ import aiosqlite
 from discord import app_commands
 from discord.ext import commands
 
-from database import DB_PATH, ensure_user
+from database import DB_PATH, ensure_user, has_infinite_coins, format_coins
 import config
 
 
@@ -74,7 +74,8 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
         )
         row = await cursor.fetchone()
 
-        if row is None or row[0] < aposta:
+        infinite = has_infinite_coins(user_id)
+        if not infinite and (row is None or row[0] < aposta):
             saldo = row[0] if row else 0
             await interaction.response.send_message(
                 f"Saldo insuficiente! Sua carteira tem "
@@ -84,15 +85,16 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
             return
 
         # A operação é atômica: impede saldo negativo.
-        await db.execute(
-            """
-            UPDATE users
-            SET wallet = wallet - ? + ?
-            WHERE guild_id = ? AND user_id = ? AND wallet >= ?
-            """,
-            (aposta, premio, guild_id, user_id, aposta),
-        )
-        await db.commit()
+        if not infinite:
+            await db.execute(
+                """
+                UPDATE users
+                SET wallet = wallet - ? + ?
+                WHERE guild_id = ? AND user_id = ? AND wallet >= ?
+                """,
+                (aposta, premio, guild_id, user_id, aposta),
+            )
+            await db.commit()
 
         cursor = await db.execute(
             "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
@@ -117,7 +119,7 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
     embed = embed_jogo(
         titulo,
         f"{descricao}\n\n{resultado}\n\n"
-        f"💰 **Carteira atual:** {novo_saldo:,} "
+        f"💰 **Carteira atual:** {format_coins(user_id, novo_saldo)} "
         f"{config.CURRENCY_NAME}",
         cor,
     )
@@ -261,7 +263,7 @@ class BlackjackView(discord.ui.LayoutView):
                 retorno = 0
                 self.result_text = f"💨 Você perdeu {self.aposta:,} moedas."
 
-            if retorno:
+            if retorno and not has_infinite_coins(self.owner_id):
                 await ensure_user(self.guild_id, self.owner_id)
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute(
@@ -275,7 +277,9 @@ class BlackjackView(discord.ui.LayoutView):
                     )
                     row = await cursor.fetchone()
                     saldo = row[0] if row else 0
-                self.result_text += f"\n💰 Carteira atual: {saldo:,} {config.CURRENCY_NAME}"
+                self.result_text += f"\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
+            elif has_infinite_coins(self.owner_id):
+                self.result_text += f"\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
 
         self._build()
         await interaction.response.edit_message(view=self)
@@ -618,22 +622,24 @@ class Fun(commands.Cog):
                     return await interaction.response.send_message(
                         "Informe uma aposta de pelo menos 1 Alpha Coin.", ephemeral=True
                     )
-                if valor_aposta > saldo:
+                infinite = has_infinite_coins(interaction.user.id)
+                if not infinite and valor_aposta > saldo:
                     return await interaction.response.send_message(
                         f"Saldo insuficiente. Sua carteira tem {saldo:,} {config.CURRENCY_NAME}.",
                         ephemeral=True,
                     )
-                cursor = await db.execute(
-                    "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
-                    (valor_aposta, interaction.guild.id, interaction.user.id, valor_aposta),
-                )
-                if cursor.rowcount != 1:
-                    await db.rollback()
-                    return await interaction.response.send_message(
-                        "Não consegui reservar sua aposta. Confira seu saldo e tente novamente.",
-                        ephemeral=True,
+                if not infinite:
+                    cursor = await db.execute(
+                        "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                        (valor_aposta, interaction.guild.id, interaction.user.id, valor_aposta),
                     )
-                await db.commit()
+                    if cursor.rowcount != 1:
+                        await db.rollback()
+                        return await interaction.response.send_message(
+                            "Não consegui reservar sua aposta. Confira seu saldo e tente novamente.",
+                            ephemeral=True,
+                        )
+                    await db.commit()
 
         partida = BlackjackView(
             owner_id=interaction.user.id,
