@@ -263,23 +263,29 @@ class BlackjackView(discord.ui.LayoutView):
                 retorno = 0
                 self.result_text = f"💨 Você perdeu {self.aposta:,} moedas."
 
-            if retorno and not has_infinite_coins(self.owner_id):
+            # A aposta já foi debitada uma única vez ao iniciar a partida.
+            # Na derrota não há novo débito: uma aposta de 5 só pode custar 5.
+            if retorno > 0 and not has_infinite_coins(self.owner_id):
                 await ensure_user(self.guild_id, self.owner_id)
                 async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("BEGIN IMMEDIATE")
                     await db.execute(
                         "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
                         (retorno, self.guild_id, self.owner_id),
                     )
                     await db.commit()
+
+            if has_infinite_coins(self.owner_id):
+                self.result_text += f"\\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
+            else:
+                async with aiosqlite.connect(DB_PATH) as db:
                     cursor = await db.execute(
                         "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
                         (self.guild_id, self.owner_id),
                     )
                     row = await cursor.fetchone()
                     saldo = row[0] if row else 0
-                self.result_text += f"\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
-            elif has_infinite_coins(self.owner_id):
-                self.result_text += f"\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
+                self.result_text += f"\\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
 
         self._build()
         await interaction.response.edit_message(view=self)
@@ -291,13 +297,16 @@ class BlackjackView(discord.ui.LayoutView):
         self.done = True
         self.result_text = "⌛ A partida expirou."
         if self.modo == "bet" and self.aposta > 0:
-            await ensure_user(self.guild_id, self.owner_id)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
-                    (self.aposta, self.guild_id, self.owner_id),
-                )
-                await db.commit()
+            # A aposta foi reservada no início; a expiração devolve apenas esse valor.
+            if not has_infinite_coins(self.owner_id):
+                await ensure_user(self.guild_id, self.owner_id)
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    await db.execute(
+                        "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
+                        (self.aposta, self.guild_id, self.owner_id),
+                    )
+                    await db.commit()
             self.result_text += f" Sua aposta de {self.aposta:,} {config.CURRENCY_NAME} foi devolvida."
         self._build()
         if self.message:
