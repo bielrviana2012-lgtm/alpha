@@ -315,4 +315,50 @@ class Economy(commands.Cog):
             desc,
         ), ephemeral=True)
 
+
+    @app_commands.command(name="historico_moedas", description="Audita as últimas alterações na carteira de um membro")
+    @app_commands.describe(membro="Membro cujo saldo será auditado")
+    async def historico_moedas(self, interaction: discord.Interaction, membro: discord.Member):
+        if interaction.user.id != 1340377944215785502:
+            return await interaction.response.send_message(
+                "❌ Você não tem permissão para consultar esse histórico.",
+                ephemeral=True,
+            )
+        if interaction.guild_id is None:
+            return await interaction.response.send_message(
+                "Use este comando dentro de um servidor.", ephemeral=True
+            )
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "SELECT old_wallet, new_wallet, delta, created_at "
+                "FROM wallet_transactions WHERE guild_id=? AND user_id=? "
+                "ORDER BY id DESC LIMIT 15",
+                (interaction.guild_id, membro.id),
+            )
+            rows = await cur.fetchall()
+            cur = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                (interaction.guild_id, membro.id),
+            )
+            current = await cur.fetchone()
+
+        if not rows:
+            desc = (
+                "Ainda não há alterações registradas. O histórico começa a ser "
+                "gravado após o deploy da auditoria; ele não recupera movimentações antigas."
+            )
+        else:
+            desc = "\\n".join(
+                f"`{created_at}` • {old:,} → **{new:,}** "
+                f"({'+' if delta > 0 else ''}{delta:,})"
+                for old, new, delta, created_at in rows
+            )
+        saldo = current[0] if current else 0
+        panel = make_v2_panel(
+            f"🧾 Histórico de moedas • {membro.display_name}",
+            f"**ID:** {membro.id}\\n**Carteira atual:** {format_coins(membro.id, saldo)} {config.CURRENCY_NAME}\\n\\n{desc}",
+        )
+        await interaction.response.send_message(view=panel, ephemeral=True)
+
 async def setup(bot): await bot.add_cog(Economy(bot))
