@@ -48,7 +48,7 @@ class AlphaExpansion(commands.Cog):
         await interaction.response.send_message(f"🎁 {interaction.user.mention} presenteou {membro.mention} com **{valor:,} {config.CURRENCY_NAME}**!")
 
     @app_commands.command(name="enquete", description="Crie uma enquete com duas ou três opções")
-    async def enquete(self, interaction: discord.Interaction, pergunta: app_commands.Range[str,5,180], opcao1: app_commands.Range[str,1,60], opcao2: app_commands.Range[str,1,60], opcao3: str | None = None):
+    async def enquete(self, interaction: discord.Interaction, pergunta: str, opcao1: str, opcao2: str, opcao3: str | None = None):
         options=[opcao1,opcao2]+([opcao3] if opcao3 else [])
         if len({x.casefold() for x in options}) != len(options):
             return await interaction.response.send_message("As opções precisam ser diferentes.", ephemeral=True)
@@ -61,7 +61,7 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="sorteio", description="Crie um sorteio com participação por botão")
     @app_commands.default_permissions(manage_guild=True)
-    async def sorteio(self, interaction: discord.Interaction, premio: app_commands.Range[str,2,100], duracao_minutos: app_commands.Range[int,1,10080]):
+    async def sorteio(self, interaction: discord.Interaction, premio: str, duracao_minutos: app_commands.Range[int,1,10080]):
         ends=(datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).isoformat()
         await interaction.response.defer(ephemeral=True)
         msg=await interaction.channel.send(f"## 🎉 SORTEIO: {discord.utils.escape_markdown(premio)}\\nOrganizador: {interaction.user.mention}\\nTermina <t:{int((datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).timestamp())}:R>\\nClique em Participar para entrar!", view=ExpansionGiveawayView())
@@ -102,7 +102,7 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="pet_adotar", description="Adote seu primeiro pet")
     @app_commands.choices(especie=[app_commands.Choice(name="Gato",value="🐈 Gato"),app_commands.Choice(name="Cachorro",value="🐕 Cachorro"),app_commands.Choice(name="Dragão Alpha",value="🐉 Dragão Alpha"),app_commands.Choice(name="Raposa",value="🦊 Raposa")])
-    async def pet_adotar(self, interaction: discord.Interaction, nome: app_commands.Range[str,1,24], especie: app_commands.Choice[str]):
+    async def pet_adotar(self, interaction: discord.Interaction, nome: str, especie: app_commands.Choice[str]):
         async with aiosqlite.connect(DB_PATH) as db:
             row=await (await db.execute("SELECT 1 FROM alpha_pets WHERE guild_id=? AND user_id=?",(interaction.guild_id,interaction.user.id))).fetchone()
             if row: return await interaction.response.send_message("Você já tem um pet. Use /pet.",ephemeral=True)
@@ -165,7 +165,7 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="clan", description="Gerencie clãs da Family Alpha")
     @app_commands.choices(acao=[app_commands.Choice(name="Criar",value="criar"),app_commands.Choice(name="Entrar",value="entrar"),app_commands.Choice(name="Sair",value="sair"),app_commands.Choice(name="Meu clã",value="ver"),app_commands.Choice(name="Ranking",value="ranking")])
-    async def clan(self, interaction: discord.Interaction, acao: app_commands.Choice[str], nome: app_commands.Range[str,2,32] | None = None):
+    async def clan(self, interaction: discord.Interaction, acao: app_commands.Choice[str], nome: str | None = None):
         async with aiosqlite.connect(DB_PATH) as db:
             if acao.value=="criar":
                 if not nome: return await interaction.response.send_message("Informe o nome do clã.",ephemeral=True)
@@ -224,7 +224,7 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="evento", description="Publique um evento da Family Alpha")
     @app_commands.default_permissions(manage_guild=True)
-    async def evento(self, interaction: discord.Interaction, titulo: app_commands.Range[str,3,100], quando: app_commands.Range[str,3,80], descricao: app_commands.Range[str,3,1000]):
+    async def evento(self, interaction: discord.Interaction, titulo: str, quando: str, descricao: str):
         await interaction.response.defer(ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("INSERT INTO alpha_events(guild_id,creator_id,title,description,starts_at) VALUES(?,?,?,?,?)",(interaction.guild_id,interaction.user.id,titulo,descricao,quando)); await db.commit()
@@ -233,7 +233,7 @@ class AlphaExpansion(commands.Cog):
 
     @app_commands.command(name="torneio", description="Crie, entre ou veja torneios")
     @app_commands.choices(acao=[app_commands.Choice(name="Criar",value="criar"),app_commands.Choice(name="Entrar",value="entrar"),app_commands.Choice(name="Participantes",value="ver"),app_commands.Choice(name="Finalizar e sortear campeão",value="finalizar")])
-    async def torneio(self, interaction: discord.Interaction, acao: app_commands.Choice[str], titulo: app_commands.Range[str,3,80] | None = None):
+    async def torneio(self, interaction: discord.Interaction, acao: app_commands.Choice[str], titulo: str | None = None):
         async with aiosqlite.connect(DB_PATH) as db:
             if acao.value=="criar":
                 if not titulo: return await interaction.response.send_message("Informe o título do torneio.",ephemeral=True)
