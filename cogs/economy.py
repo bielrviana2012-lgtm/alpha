@@ -90,22 +90,44 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="daily", description="Resgate sua recompensa diária")
     async def daily(self, interaction: discord.Interaction):
-        row = await get_user(interaction.guild_id, interaction.user.id)
+        await get_user(interaction.guild_id, interaction.user.id)
         today = date.today().isoformat()
-        if row['last_daily'] == today:
-            return await interaction.response.send_message("⏳ Você já resgatou sua recompensa hoje. Volte amanhã!", ephemeral=True)
         reward = random.randint(100, 250)
+
+        # Cooldown e crédito protegidos pela mesma transação.
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE users SET wallet=wallet+?, last_daily=? WHERE guild_id=? AND user_id=?",
-                (reward, today, interaction.guild_id, interaction.user.id),
+            await db.execute("BEGIN IMMEDIATE")
+            cur = await db.execute(
+                "SELECT last_daily FROM users WHERE guild_id=? AND user_id=?",
+                (interaction.guild_id, interaction.user.id),
             )
-            await db.commit()
-            cursor = await db.execute(
+            row = await cur.fetchone()
+            if row and row[0] == today:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    "⏳ Você já resgatou sua recompensa hoje. Volte amanhã!",
+                    ephemeral=True,
+                )
+
+            cur = await db.execute(
+                "UPDATE users SET wallet=wallet+?, last_daily=? "
+                "WHERE guild_id=? AND user_id=? "
+                "AND (last_daily IS NULL OR last_daily != ?)",
+                (reward, today, interaction.guild_id, interaction.user.id, today),
+            )
+            if cur.rowcount != 1:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    "Não consegui confirmar seu resgate. Tente novamente.",
+                    ephemeral=True,
+                )
+            cur = await db.execute(
                 "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
                 (interaction.guild_id, interaction.user.id),
             )
-            saldo_atual = (await cursor.fetchone())[0]
+            saldo_atual = (await cur.fetchone())[0]
+            await db.commit()
+
         await interaction.response.send_message(view=make_v2_panel(
             "🎁 Recompensa diária recebida",
             f"Você recebeu **{reward:,} {config.CURRENCY_NAME}**!\n\n"
@@ -114,15 +136,43 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="trabalhar", description="Faça um trabalho e ganhe moedas (cooldown diário)")
     async def trabalhar(self, interaction: discord.Interaction):
-        row = await get_user(interaction.guild_id, interaction.user.id)
+        await get_user(interaction.guild_id, interaction.user.id)
         today = date.today().isoformat()
-        if row['last_work'] == today:
-            return await interaction.response.send_message("⏳ Você já trabalhou hoje. Volte amanhã!", ephemeral=True)
         reward = random.randint(60, 180)
         jobs = ["designer", "programador", "entregador", "streamer", "construtor de obbies"]
+
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE users SET wallet=wallet+?, last_work=? WHERE guild_id=? AND user_id=?", (reward,today,interaction.guild_id,interaction.user.id)); await db.commit()
-        await interaction.response.send_message(f"🧰 Você trabalhou como **{random.choice(jobs)}** e ganhou **{reward} {config.CURRENCY_NAME}**!")
+            await db.execute("BEGIN IMMEDIATE")
+            cur = await db.execute(
+                "SELECT last_work FROM users WHERE guild_id=? AND user_id=?",
+                (interaction.guild_id, interaction.user.id),
+            )
+            row = await cur.fetchone()
+            if row and row[0] == today:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    "⏳ Você já trabalhou hoje. Volte amanhã!",
+                    ephemeral=True,
+                )
+
+            cur = await db.execute(
+                "UPDATE users SET wallet=wallet+?, last_work=? "
+                "WHERE guild_id=? AND user_id=? "
+                "AND (last_work IS NULL OR last_work != ?)",
+                (reward, today, interaction.guild_id, interaction.user.id, today),
+            )
+            if cur.rowcount != 1:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    "Não consegui confirmar seu trabalho. Tente novamente.",
+                    ephemeral=True,
+                )
+            await db.commit()
+
+        await interaction.response.send_message(
+            f"🧰 Você trabalhou como **{random.choice(jobs)}** e ganhou "
+            f"**{reward} {config.CURRENCY_NAME}**!"
+        )
 
     async def move_money(self, interaction, amount, column_from, column_to):
         if amount <= 0:
