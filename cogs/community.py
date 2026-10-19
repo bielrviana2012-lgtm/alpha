@@ -148,6 +148,12 @@ class SuggestionView(discord.ui.LayoutView):
                  status: str = "Em análise", yes: int = 0, no: int = 0,
                  admin_id: int | None = None, response: str = ""):
         super().__init__(timeout=None)
+        self.suggestion_id = suggestion_id
+        self.suggestion_text = texto
+        self.suggestion_author_id = autor_id
+        self.suggestion_status = status
+        self.suggestion_admin_id = admin_id
+        self.suggestion_response = response
         panel = discord.ui.Container(accent_colour=PURPLE)
         panel.add_item(discord.ui.TextDisplay(f"# 💡 Sugestão #{suggestion_id}"))
         panel.add_item(discord.ui.Separator())
@@ -196,9 +202,40 @@ class SuggestionView(discord.ui.LayoutView):
                     (interaction.message.id,),
                 )
                 row = await cur.fetchone()
+            if not row and self.suggestion_id > 0:
+                # Recupera o registro usando os dados da própria mensagem/view.
+                # Isso também permite votar se o SQLite foi reiniciado e perdeu a tabela de sugestões.
+                cur = await db.execute(
+                    "SELECT id,text,user_id,status,admin_id,response,message_id FROM suggestions WHERE id=?",
+                    (self.suggestion_id,),
+                )
+                by_id = await cur.fetchone()
+                if by_id and by_id[6] == interaction.message.id:
+                    row = by_id[:6]
+                elif not by_id:
+                    cur = await db.execute(
+                        "INSERT INTO suggestions(id,guild_id,user_id,text,message_id,channel_id,status) VALUES(?,?,?,?,?,?,?)",
+                        (self.suggestion_id, interaction.guild_id, self.suggestion_author_id,
+                         self.suggestion_text, interaction.message.id, interaction.channel_id,
+                         self.suggestion_status),
+                    )
+                    await db.commit()
+                    row = (self.suggestion_id, self.suggestion_text, self.suggestion_author_id,
+                           self.suggestion_status, self.suggestion_admin_id, self.suggestion_response)
+                else:
+                    # O ID antigo já foi reutilizado após um reset; cria um novo registro seguro.
+                    cur = await db.execute(
+                        "INSERT INTO suggestions(guild_id,user_id,text,message_id,channel_id,status) VALUES(?,?,?,?,?,?)",
+                        (interaction.guild_id, self.suggestion_author_id, self.suggestion_text,
+                         interaction.message.id, interaction.channel_id, self.suggestion_status),
+                    )
+                    await db.commit()
+                    recovered_id = cur.lastrowid
+                    row = (recovered_id, self.suggestion_text, self.suggestion_author_id,
+                           self.suggestion_status, self.suggestion_admin_id, self.suggestion_response)
             if not row:
                 return await interaction.response.send_message(
-                    "Não encontrei esta sugestão no banco de dados. Ela pode ser antiga ou ter sido perdida numa reinicialização do banco. Publique uma nova sugestão para habilitar a votação.",
+                    "Não consegui recuperar esta sugestão. Publique uma nova sugestão e tente novamente.",
                     ephemeral=True,
                 )
             sid, texto, autor_id, status, admin_id, response = row
