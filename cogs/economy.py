@@ -96,10 +96,20 @@ class Economy(commands.Cog):
             return await interaction.response.send_message("⏳ Você já resgatou sua recompensa hoje. Volte amanhã!", ephemeral=True)
         reward = random.randint(100, 250)
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE users SET wallet=wallet+?, last_daily=? WHERE guild_id=? AND user_id=?", (reward,today,interaction.guild_id,interaction.user.id)); await db.commit()
+            await db.execute(
+                "UPDATE users SET wallet=wallet+?, last_daily=? WHERE guild_id=? AND user_id=?",
+                (reward, today, interaction.guild_id, interaction.user.id),
+            )
+            await db.commit()
+            cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                (interaction.guild_id, interaction.user.id),
+            )
+            saldo_atual = (await cursor.fetchone())[0]
         await interaction.response.send_message(view=make_v2_panel(
             "🎁 Recompensa diária recebida",
-            f"Você recebeu **{reward} {config.CURRENCY_NAME}**!",
+            f"Você recebeu **{reward:,} {config.CURRENCY_NAME}**!\n\n"
+            f"💰 **Carteira atual:** {saldo_atual:,} {config.CURRENCY_NAME}",
         ))
 
     @app_commands.command(name="trabalhar", description="Faça um trabalho e ganhe moedas (cooldown diário)")
