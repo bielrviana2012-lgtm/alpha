@@ -285,7 +285,7 @@ class BlackjackView(discord.ui.LayoutView):
                     await db.commit()
 
             if has_infinite_coins(self.owner_id):
-                self.result_text += f"\\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
+                self.result_text += f"\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
             else:
                 async with aiosqlite.connect(DB_PATH) as db:
                     cursor = await db.execute(
