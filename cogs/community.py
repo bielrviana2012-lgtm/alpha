@@ -917,9 +917,17 @@ class Community(commands.Cog):
     @app_commands.command(name="sugerir", description="Envie uma sugestão para a comunidade")
     @app_commands.guild_only()
     async def sugerir(self, interaction: discord.Interaction, texto: app_commands.Range[str, 8, 1000]):
+        # Reconhece a interação logo no início para evitar expiração durante
+        # as operações de banco de dados e envio da sugestão.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
         channel = interaction.guild.get_channel(config.SUGGESTION_CHANNEL_ID) if config.SUGGESTION_CHANNEL_ID else interaction.channel
         if channel is None:
-            return await interaction.response.send_message("O canal de sugestões configurado não foi encontrado. Avise a equipe.", ephemeral=True)
+            return await interaction.followup.send(
+                "O canal de sugestões configurado não foi encontrado. Avise a equipe.",
+                ephemeral=True,
+            )
+
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute(
                 "INSERT INTO suggestions(guild_id,user_id,text,channel_id) VALUES(?,?,?,?)",
@@ -927,11 +935,16 @@ class Community(commands.Cog):
             )
             sid = cur.lastrowid
             await db.commit()
+
         msg = await channel.send(view=SuggestionView(sid, texto, interaction.user.id))
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE suggestions SET message_id=? WHERE id=?", (msg.id, sid))
             await db.commit()
-        await interaction.response.send_message(f"✅ Sua sugestão foi enviada em {channel.mention}!", ephemeral=True)
+
+        await interaction.followup.send(
+            f"✅ Sua sugestão foi enviada em {channel.mention}!",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="status_sugestao", description="Atualize o status de uma sugestão")
     @app_commands.default_permissions(manage_messages=True)
