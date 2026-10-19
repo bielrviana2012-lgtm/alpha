@@ -69,19 +69,10 @@ class OptionalBetting(commands.Cog):
         self.bot = bot
 
     async def resolve_wager(self, interaction: discord.Interaction, wager):
-        """Usa toda a carteira quando o membro não informa uma aposta."""
-        if wager is not None:
-            return wager
-        if interaction.guild_id is None:
+        """Não converte uma aposta omitida em aposta de carteira inteira."""
+        if wager is None:
             return 0
-        await ensure_user(interaction.guild_id, interaction.user.id)
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
-                (interaction.guild_id, interaction.user.id),
-            )
-            row = await cur.fetchone()
-        return max(0, row[0] if row else 0)
+        return wager
 
     async def check_ready(self, interaction: discord.Interaction) -> bool:
         if interaction.guild_id is None:
@@ -103,9 +94,15 @@ class OptionalBetting(commands.Cog):
         user_id = interaction.user.id
         if guild_id is None:
             return
+        if wager is None or wager < MIN_BET or wager > MAX_BET:
+            return await interaction.response.send_message(
+                f"Informe explicitamente uma aposta entre {MIN_BET:,} e {MAX_BET:,} "
+                f"{config.CURRENCY_NAME}. O Sr.Alpha nunca apostará sua carteira inteira automaticamente.",
+                ephemeral=True,
+            )
         await ensure_user(guild_id, user_id)
 
-        # Atualização condicional impede que a carteira fique negativa.
+        # Débito e prêmio ficam na mesma transação; aposta omitida nunca usa a carteira inteira.
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("BEGIN IMMEDIATE")
             infinite = has_infinite_coins(user_id)
