@@ -33,19 +33,11 @@ def embed_jogo(titulo, descricao, cor=COR):
     return layout
 
 async def aposta_efetiva(interaction, modo, aposta):
-    """Se a aposta ficar vazia, usa toda a carteira no modo de moedas."""
-    if modo != "bet" or aposta is not None:
-        return aposta or 0
-    if interaction.guild is None:
+    """Nunca transforma uma aposta omitida em aposta de carteira inteira."""
+    if modo != "bet":
         return 0
-    await ensure_user(interaction.guild.id, interaction.user.id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
-            (interaction.guild.id, interaction.user.id),
-        )
-        row = await cursor.fetchone()
-    return max(0, row[0] if row else 0)
+    # O valor precisa ser informado explicitamente; evita all-in acidental.
+    return aposta if aposta is not None else 0
 
 
 async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
@@ -616,10 +608,15 @@ class Fun(commands.Cog):
                 )
                 row = await cursor.fetchone()
                 saldo = row[0] if row else 0
-                valor_aposta = saldo if aposta is None else aposta
+                if aposta is None:
+                    return await interaction.response.send_message(
+                        "Informe o valor da aposta. Por segurança, o Sr.Alpha não aposta sua carteira inteira automaticamente.",
+                        ephemeral=True,
+                    )
+                valor_aposta = aposta
                 if valor_aposta < 1:
                     return await interaction.response.send_message(
-                        "Você não tem Alpha Coins para apostar.", ephemeral=True
+                        "Informe uma aposta de pelo menos 1 Alpha Coin.", ephemeral=True
                     )
                 if valor_aposta > saldo:
                     return await interaction.response.send_message(
