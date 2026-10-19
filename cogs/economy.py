@@ -125,17 +125,31 @@ class Economy(commands.Cog):
         await interaction.response.send_message(f"🧰 Você trabalhou como **{random.choice(jobs)}** e ganhou **{reward} {config.CURRENCY_NAME}**!")
 
     async def move_money(self, interaction, amount, column_from, column_to):
-        if amount <= 0: return await interaction.response.send_message("O valor precisa ser maior que zero.", ephemeral=True)
-        row = await get_user(interaction.guild_id, interaction.user.id)
+        if amount <= 0:
+            return await interaction.response.send_message("O valor precisa ser maior que zero.", ephemeral=True)
+        await ensure_user(interaction.guild_id, interaction.user.id)
         infinite_wallet = has_infinite_coins(interaction.user.id)
-        if not infinite_wallet and row[column_from] < amount: return await interaction.response.send_message("Você não tem saldo suficiente.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("BEGIN IMMEDIATE")
             if infinite_wallet:
-                await db.execute(f"UPDATE users SET {column_to}={column_to}+? WHERE guild_id=? AND user_id=?", (amount,interaction.guild_id,interaction.user.id))
+                await db.execute(
+                    f"UPDATE users SET {column_to}={column_to}+? WHERE guild_id=? AND user_id=?",
+                    (amount, interaction.guild_id, interaction.user.id),
+                )
             else:
-                await db.execute(f"UPDATE users SET {column_from}={column_from}-?, {column_to}={column_to}+? WHERE guild_id=? AND user_id=?", (amount,amount,interaction.guild_id,interaction.user.id))
+                cur = await db.execute(
+                    f"UPDATE users SET {column_from}={column_from}-?, {column_to}={column_to}+? "
+                    f"WHERE guild_id=? AND user_id=? AND {column_from}>=?",
+                    (amount, amount, interaction.guild_id, interaction.user.id, amount),
+                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "Você não tem saldo suficiente. Nenhuma moeda foi movimentada.",
+                        ephemeral=True,
+                    )
             await db.commit()
-        await interaction.response.send_message(f"✅ Transferência concluída: **{amount} {config.CURRENCY_NAME}**.")
+        await interaction.response.send_message(f"✅ Transferência concluída: **{amount:,} {config.CURRENCY_NAME}**.")
 
     @app_commands.command(name="depositar", description="Deposite moedas no banco")
     async def depositar(self, interaction: discord.Interaction, valor: app_commands.Range[int, 1, 1000000000]): await self.move_money(interaction, valor, "wallet", "bank")
@@ -146,14 +160,28 @@ class Economy(commands.Cog):
     @app_commands.command(name="transferir", description="Envie moedas para outro membro")
     async def transferir(self, interaction: discord.Interaction, membro: discord.Member, valor: app_commands.Range[int, 1, 1000000000]):
         if membro.bot or membro.id == interaction.user.id: return await interaction.response.send_message("Escolha outro membro que não seja um bot.", ephemeral=True)
-        row = await get_user(interaction.guild_id, interaction.user.id); await ensure_user(interaction.guild_id, membro.id)
+        await ensure_user(interaction.guild_id, interaction.user.id)
+        await ensure_user(interaction.guild_id, membro.id)
         infinite = has_infinite_coins(interaction.user.id)
-        if not infinite and row['wallet'] < valor: return await interaction.response.send_message("Saldo insuficiente na carteira.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("BEGIN IMMEDIATE")
             if not infinite:
-                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (valor,interaction.guild_id,interaction.user.id))
-            await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (valor,interaction.guild_id,membro.id)); await db.commit()
-        await interaction.response.send_message(f"💸 {interaction.user.mention} enviou **{valor} {config.CURRENCY_NAME}** para {membro.mention}.")
+                cur = await db.execute(
+                    "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                    (valor, interaction.guild_id, interaction.user.id, valor),
+                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "Saldo insuficiente na carteira. Nenhuma moeda foi transferida.",
+                        ephemeral=True,
+                    )
+            await db.execute(
+                "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                (valor, interaction.guild_id, membro.id),
+            )
+            await db.commit()
+        await interaction.response.send_message(f"💸 {interaction.user.mention} enviou **{valor:,} {config.CURRENCY_NAME}** para {membro.mention}.")
 
     @app_commands.command(name="ranking", description="Veja os membros mais ricos do servidor")
     async def ranking(self, interaction: discord.Interaction):
@@ -244,14 +272,26 @@ class Economy(commands.Cog):
         if match is None:
             return await interaction.response.send_message("Esse produto não está mais disponível na loja.", ephemeral=True)
         product_name, price = match
-        row = await get_user(interaction.guild_id, interaction.user.id)
+        await ensure_user(interaction.guild_id, interaction.user.id)
         infinite = has_infinite_coins(interaction.user.id)
-        if not infinite and row['wallet'] < price:
-            return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("BEGIN IMMEDIATE")
             if not infinite:
-                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (price, interaction.guild_id, interaction.user.id))
-            await db.execute("INSERT INTO inventory(guild_id,user_id,item,quantity) VALUES(?,?,?,1) ON CONFLICT(guild_id,user_id,item) DO UPDATE SET quantity=quantity+1", (interaction.guild_id, interaction.user.id, product_name))
+                cur = await db.execute(
+                    "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                    (price, interaction.guild_id, interaction.user.id, price),
+                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "Você não tem moedas suficientes na carteira. Nenhuma compra foi realizada.",
+                        ephemeral=True,
+                    )
+            await db.execute(
+                "INSERT INTO inventory(guild_id,user_id,item,quantity) VALUES(?,?,?,1) "
+                "ON CONFLICT(guild_id,user_id,item) DO UPDATE SET quantity=quantity+1",
+                (interaction.guild_id, interaction.user.id, product_name),
+            )
             await db.commit()
         await interaction.response.send_message(f"🛍️ Compra concluída: **{product_name}**! Confira `/inventario`.")
 
