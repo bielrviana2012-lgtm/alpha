@@ -570,14 +570,23 @@ class Community(commands.Cog):
 
     async def cog_load(self):
         await init_community_tables()
-        # Register persistent views for existing panels and open tickets.
+        # Restore persistent views for published panels and pending ratings.
+        # TicketControlView is registered ONCE globally in setup(); its callbacks
+        # identify the ticket from interaction.channel_id. Registering one copy
+        # per open ticket with identical custom_ids can overwrite dispatch handlers
+        # and make old ticket buttons unreliable after reloads.
         async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute("SELECT guild_id, panel_channel_id, panel_message_id FROM ticket_settings WHERE panel_message_id IS NOT NULL")
+            cur = await db.execute(
+                "SELECT guild_id, panel_channel_id, panel_message_id "
+                "FROM ticket_settings WHERE panel_message_id IS NOT NULL"
+            )
             panels = await cur.fetchall()
-            cur = await db.execute("SELECT channel_id FROM ticket_records WHERE status='open'")
-            open_tickets = await cur.fetchall()
-            cur = await db.execute("SELECT channel_id FROM ticket_records WHERE status='closed' AND rating IS NULL")
+            cur = await db.execute(
+                "SELECT channel_id FROM ticket_records "
+                "WHERE status='closed' AND rating IS NULL"
+            )
             awaiting_ratings = await cur.fetchall()
+
         for guild_id, channel_id, message_id in panels:
             categories = await get_ticket_categories(guild_id)
             settings = await get_ticket_settings(guild_id)
@@ -594,9 +603,10 @@ class Community(commands.Cog):
                     message = await channel.fetch_message(message_id)
                     await message.edit(embeds=[], view=view)
                 except discord.HTTPException:
-                    log.exception("Não consegui migrar o painel de tickets %s para V2.", message_id)
-        for (channel_id,) in open_tickets:
-            self.bot.add_view(TicketControlView(), message_id=None)
+                    log.exception(
+                        "Não consegui restaurar o painel de tickets %s.", message_id
+                    )
+
         for (channel_id,) in awaiting_ratings:
             self.bot.add_view(RatingView(channel_id))
 
