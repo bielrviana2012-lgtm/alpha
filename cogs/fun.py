@@ -67,41 +67,48 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
     guild_id = interaction.guild.id
     user_id = interaction.user.id
     await ensure_user(guild_id, user_id)
+    infinite = has_infinite_coins(user_id)
 
     async with aiosqlite.connect(DB_PATH) as db:
+        # Serializa a operação completa. Dois jogos simultâneos não podem
+        # validar o mesmo saldo e depois debitar/prêmio de forma inconsistente.
+        await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute(
             "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
             (guild_id, user_id),
         )
         row = await cursor.fetchone()
 
-        infinite = has_infinite_coins(user_id)
         if not infinite and (row is None or row[0] < aposta):
             saldo = row[0] if row else 0
-            await interaction.response.send_message(
+            await db.rollback()
+            return await interaction.response.send_message(
                 f"Saldo insuficiente! Sua carteira tem "
-                f"**{saldo:,} {config.CURRENCY_NAME}**.",
+                f"**{saldo:,} {config.CURRENCY_NAME}**. Nenhuma moeda foi alterada.",
                 ephemeral=True,
             )
-            return
 
-        # A operação é atômica: impede saldo negativo.
         if not infinite:
-            await db.execute(
-                """
-                UPDATE users
-                SET wallet = wallet - ? + ?
-                WHERE guild_id = ? AND user_id = ? AND wallet >= ?
-                """,
+            cursor = await db.execute(
+                "UPDATE users SET wallet=wallet-?+? "
+                "WHERE guild_id=? AND user_id=? AND wallet>=?",
                 (aposta, premio, guild_id, user_id, aposta),
             )
-            await db.commit()
+            if cursor.rowcount != 1:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    "Não consegui confirmar seu saldo; nenhuma moeda foi alterada. "
+                    "Confira /saldo e tente novamente.",
+                    ephemeral=True,
+                )
 
         cursor = await db.execute(
             "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
             (guild_id, user_id),
         )
-        novo_saldo = (await cursor.fetchone())[0]
+        current = await cursor.fetchone()
+        novo_saldo = current[0] if current else 0
+        await db.commit()
 
     if empate:
         resultado = f"🤝 Empate! A aposta foi devolvida: **{aposta:,}**."
@@ -117,11 +124,12 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
         resultado = f"💨 Você perdeu **{aposta:,}** moedas."
         cor = VERMELHO
 
+    saldo_formatado = "∞" if infinite else f"{novo_saldo:,}"
     embed = embed_jogo(
         titulo,
+        f"**Jogador:** <@{user_id}> (ID: {user_id})\n"
         f"{descricao}\n\n{resultado}\n\n"
-        f"💰 **Carteira atual:** {format_coins(user_id, novo_saldo)} "
-        f"{config.CURRENCY_NAME}",
+        f"💰 **Carteira atual:** {saldo_formatado} {config.CURRENCY_NAME}",
         cor,
     )
     await interaction.response.send_message(view=embed)
