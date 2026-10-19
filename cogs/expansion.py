@@ -31,6 +31,45 @@ class AlphaExpansion(commands.Cog):
             """)
             await db.commit()
 
+
+    @app_commands.command(name="presentear", description="Presenteie outro membro com Alpha Coins")
+    async def presentear(self, interaction: discord.Interaction, membro: discord.Member, valor: app_commands.Range[int,1,1000000]):
+        if membro.bot or membro.id == interaction.user.id:
+            return await interaction.response.send_message("Escolha outro membro humano.", ephemeral=True)
+        user = await get_user(interaction.guild_id, interaction.user.id)
+        if not has_infinite_coins(interaction.user.id) and user["wallet"] < valor:
+            return await interaction.response.send_message("Você não tem moedas suficientes na carteira.", ephemeral=True)
+        async with aiosqlite.connect(DB_PATH) as db:
+            if not has_infinite_coins(interaction.user.id):
+                await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=?", (valor, interaction.guild_id, interaction.user.id))
+            await db.execute("INSERT OR IGNORE INTO users(guild_id,user_id) VALUES(?,?)", (interaction.guild_id, membro.id))
+            await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (valor, interaction.guild_id, membro.id))
+            await db.commit()
+        await interaction.response.send_message(f"🎁 {interaction.user.mention} presenteou {membro.mention} com **{valor:,} {config.CURRENCY_NAME}**!")
+
+    @app_commands.command(name="enquete", description="Crie uma enquete com duas ou três opções")
+    async def enquete(self, interaction: discord.Interaction, pergunta: app_commands.Range[str,5,180], opcao1: app_commands.Range[str,1,60], opcao2: app_commands.Range[str,1,60], opcao3: str | None = None):
+        options=[opcao1,opcao2]+([opcao3] if opcao3 else [])
+        if len({x.casefold() for x in options}) != len(options):
+            return await interaction.response.send_message("As opções precisam ser diferentes.", ephemeral=True)
+        view=ExpansionPollView(options)
+        msg=await interaction.channel.send(f"## 📊 {discord.utils.escape_markdown(pergunta)}\\nCriada por {interaction.user.mention}\\n"+ "\\n".join(f"**{i+1}.** {discord.utils.escape_markdown(x)}" for i,x in enumerate(options)), view=view)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("INSERT INTO alpha_polls(message_id,guild_id,question,options) VALUES(?,?,?,?)",(msg.id,interaction.guild_id,pergunta,"\\n".join(options)))
+            await db.commit()
+        await interaction.response.send_message(f"Enquete publicada: {msg.jump_url}", ephemeral=True)
+
+    @app_commands.command(name="sorteio", description="Crie um sorteio com participação por botão")
+    @app_commands.default_permissions(manage_guild=True)
+    async def sorteio(self, interaction: discord.Interaction, premio: app_commands.Range[str,2,100], duracao_minutos: app_commands.Range[int,1,10080]):
+        ends=(datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).isoformat()
+        await interaction.response.defer(ephemeral=True)
+        msg=await interaction.channel.send(f"## 🎉 SORTEIO: {discord.utils.escape_markdown(premio)}\\nOrganizador: {interaction.user.mention}\\nTermina <t:{int((datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).timestamp())}:R>\\nClique em Participar para entrar!", view=ExpansionGiveawayView())
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("INSERT INTO alpha_giveaways(message_id,guild_id,host_id,prize,ends_at) VALUES(?,?,?,?,?)",(msg.id,interaction.guild_id,interaction.user.id,premio,ends))
+            await db.commit()
+        await interaction.followup.send(f"Sorteio publicado: {msg.jump_url}",ephemeral=True)
+
     @app_commands.command(name="perfil", description="Mostra seu perfil da Family Alpha")
     async def perfil(self, interaction: discord.Interaction, membro: discord.Member | None = None):
         target=membro or interaction.user
@@ -215,6 +254,53 @@ class AlphaExpansion(commands.Cog):
                 return await interaction.response.send_message(f"🏆 Campeão do torneio **{name}**: <@{winner}>!")
         await interaction.response.send_message(f"## 🏆 Participantes de {name}\n"+("\n".join(f"• <@{r[0]}>" for r in participants) if participants else "Ninguém inscrito."))
 
+
+
+class ExpansionPollView(discord.ui.View):
+    def __init__(self, options):
+        super().__init__(timeout=None)
+        for index, option in enumerate(options):
+            self.add_item(ExpansionPollButton(index, option[:80]))
+
+class ExpansionPollButton(discord.ui.Button):
+    def __init__(self, index, label):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"alpha_exp_poll:{index}")
+        self.index=index
+
+    async def callback(self, interaction: discord.Interaction):
+        async with aiosqlite.connect(DB_PATH) as db:
+            row=await (await db.execute("SELECT options FROM alpha_polls WHERE message_id=?",(interaction.message.id,))).fetchone()
+            if not row:
+                return await interaction.response.send_message("Enquete não encontrada.",ephemeral=True)
+            options=row[0].split("\\n")
+            if self.index >= len(options):
+                return await interaction.response.send_message("Opção inválida.",ephemeral=True)
+            await db.execute("INSERT INTO alpha_poll_votes(message_id,user_id,option_index) VALUES(?,?,?) ON CONFLICT(message_id,user_id) DO UPDATE SET option_index=excluded.option_index",(interaction.message.id,interaction.user.id,self.index))
+            await db.commit()
+            counts=await (await db.execute("SELECT option_index,COUNT(*) FROM alpha_poll_votes WHERE message_id=? GROUP BY option_index",(interaction.message.id,))).fetchall()
+        tally={x[0]:x[1] for x in counts}
+        await interaction.response.send_message("🗳️ Voto registrado!\\n"+"\\n".join(f"**{i+1}. {x}** — {tally.get(i,0)} voto(s)" for i,x in enumerate(options)),ephemeral=True)
+
+class ExpansionGiveawayView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Participar", style=discord.ButtonStyle.success, emoji="🎉", custom_id="alpha_exp_giveaway:join")
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async with aiosqlite.connect(DB_PATH) as db:
+            row=await (await db.execute("SELECT ends_at,ended FROM alpha_giveaways WHERE message_id=?",(interaction.message.id,))).fetchone()
+            if not row:
+                return await interaction.response.send_message("Sorteio não encontrado.",ephemeral=True)
+            if row[1] or datetime.fromisoformat(row[0]) <= datetime.now(timezone.utc):
+                return await interaction.response.send_message("Esse sorteio já terminou.",ephemeral=True)
+            try:
+                await db.execute("INSERT INTO alpha_giveaway_entries(message_id,user_id) VALUES(?,?)",(interaction.message.id,interaction.user.id))
+                message="Você está participando do sorteio! 🎉"
+            except aiosqlite.IntegrityError:
+                await db.execute("DELETE FROM alpha_giveaway_entries WHERE message_id=? AND user_id=?",(interaction.message.id,interaction.user.id))
+                message="Sua participação foi cancelada."
+            await db.commit()
+        await interaction.response.send_message(message,ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AlphaExpansion(bot))
