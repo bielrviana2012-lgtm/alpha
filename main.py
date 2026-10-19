@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
-from database import init_db
+from database import DB_PATH, init_db
 
 
 # =========================================================
@@ -52,7 +52,7 @@ class AlphaBot(commands.Bot):
         # Inicializa o banco de dados.
         try:
             await init_db()
-            logger.info("Banco de dados inicializado.")
+            logger.info("Banco de dados inicializado. DB_PATH=%s", DB_PATH.resolve())
         except Exception:
             logger.exception("Falha ao inicializar o banco de dados.")
             raise
