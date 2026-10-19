@@ -14,6 +14,7 @@ class AlphaExpansion(commands.Cog):
     async def cog_load(self):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.executescript("""
+            CREATE TABLE IF NOT EXISTS alpha_mission_claims(guild_id INTEGER,user_id INTEGER,mission_date TEXT,reward INTEGER,PRIMARY KEY(guild_id,user_id,mission_date));
             CREATE TABLE IF NOT EXISTS alpha_pets(guild_id INTEGER,user_id INTEGER,name TEXT,species TEXT,level INTEGER DEFAULT 1,xp INTEGER DEFAULT 0,fed_at TEXT,PRIMARY KEY(guild_id,user_id));
             CREATE TABLE IF NOT EXISTS alpha_reputation(guild_id INTEGER,giver_id INTEGER,target_id INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(guild_id,giver_id,target_id));
             CREATE TABLE IF NOT EXISTS alpha_achievements(guild_id INTEGER,user_id INTEGER,achievement_key TEXT,PRIMARY KEY(guild_id,user_id,achievement_key));
@@ -69,6 +70,27 @@ class AlphaExpansion(commands.Cog):
             await db.execute("INSERT INTO alpha_giveaways(message_id,guild_id,host_id,prize,ends_at) VALUES(?,?,?,?,?)",(msg.id,interaction.guild_id,interaction.user.id,premio,ends))
             await db.commit()
         await interaction.followup.send(f"Sorteio publicado: {msg.jump_url}",ephemeral=True)
+
+    @app_commands.command(name="missao", description="Complete sua missão diária e ganhe Alpha Coins")
+    async def missao(self, interaction: discord.Interaction):
+        today=date.today().isoformat()
+        missions=[
+            ("Explorador Alpha","Use /masmorra para explorar uma aventura",100),
+            ("Companheiro Alpha","Confira seu perfil com /perfil",80),
+            ("Colecionador","Confira as conquistas com /conquistas",90),
+        ]
+        # Escolhe uma missão fixa por dia e limita a recompensa a um resgate diário.
+        index=(date.today().toordinal()+interaction.user.id)%len(missions)
+        title,description,reward=missions[index]
+        async with aiosqlite.connect(DB_PATH) as db:
+            row=await (await db.execute("SELECT reward FROM alpha_mission_claims WHERE guild_id=? AND user_id=? AND mission_date=?",(interaction.guild_id,interaction.user.id,today))).fetchone()
+            if row:
+                return await interaction.response.send_message(f"✅ Sua missão diária já foi resgatada hoje. Recompensa recebida: **{row[0]} {config.CURRENCY_NAME}**.",ephemeral=True)
+            await db.execute("INSERT INTO alpha_mission_claims(guild_id,user_id,mission_date,reward) VALUES(?,?,?,?)",(interaction.guild_id,interaction.user.id,today,reward))
+            await db.execute("INSERT OR IGNORE INTO users(guild_id,user_id) VALUES(?,?)",(interaction.guild_id,interaction.user.id))
+            await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",(reward,interaction.guild_id,interaction.user.id))
+            await db.commit()
+        await interaction.response.send_message(f"## 🎯 Missão diária: {title}\n{description}\n\n🎁 Recompensa: **{reward} {config.CURRENCY_NAME}**\n-# Recompensa diária já creditada na sua carteira.")
 
     @app_commands.command(name="perfil", description="Mostra seu perfil da Family Alpha")
     async def perfil(self, interaction: discord.Interaction, membro: discord.Member | None = None):
