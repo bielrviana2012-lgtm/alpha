@@ -209,14 +209,14 @@ class Economy(commands.Cog):
     @app_commands.command(name="loja", description="Veja os itens disponíveis na loja")
     async def loja(self, interaction: discord.Interaction):
         products = await self.get_products(interaction.guild_id)
-        text = "\\n".join(
+        text = "\n".join(
             f"**{item}** — {price:,} {config.CURRENCY_NAME}"
             for item, price in products
         )
         await interaction.response.send_message(view=make_v2_panel(
             "🛍️ Loja Alpha",
             (text or "A loja está vazia. O responsável pode adicionar produtos usando `/produto_criar`.") +
-            "\\n\\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.",
+            "\n\nCompre usando `/comprar`. Itens cosméticos não concedem permissões reais.",
         ), ephemeral=True)
 
     @app_commands.command(name="comprar", description="Compre um item da loja")
