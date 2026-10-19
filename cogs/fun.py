@@ -688,7 +688,25 @@ class Fun(commands.Cog):
             modo=modo.value,
             aposta=valor_aposta,
         )
-        await interaction.response.send_message(view=partida)
+        try:
+            await interaction.response.send_message(view=partida)
+        except discord.HTTPException:
+            # Se a partida não puder ser publicada, devolve a aposta reservada.
+            if (
+                modo.value == "bet"
+                and valor_aposta > 0
+                and not has_infinite_coins(interaction.user.id)
+            ):
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    await db.execute(
+                        "UPDATE users SET wallet=wallet+? "
+                        "WHERE guild_id=? AND user_id=?",
+                        (valor_aposta, interaction.guild.id, interaction.user.id),
+                    )
+                    await db.commit()
+            raise
+
         partida.message = await interaction.original_response()
 
     @app_commands.command(name="caraoucoroa", description="Adivinhe o resultado da moeda")
