@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from database import DB_PATH, ensure_user, get_user
+from database import DB_PATH, ensure_user, get_user, has_infinite_coins, format_coins
 import config
 
 MIN_BET = 1
@@ -108,22 +108,24 @@ class OptionalBetting(commands.Cog):
         # Atualização condicional impede que a carteira fique negativa.
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("BEGIN IMMEDIATE")
-            cur = await db.execute(
-                "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
-                (wager, guild_id, user_id, wager),
-            )
-            if cur.rowcount != 1:
-                await db.rollback()
-                return await interaction.response.send_message(
-                    "💸 Você não tem moedas suficientes na carteira para essa jogada. "
-                    "Confira com `/saldo` ou ganhe moedas com `/daily` e `/trabalhar`.",
-                    ephemeral=True,
+            infinite = has_infinite_coins(user_id)
+            if not infinite:
+                cur = await db.execute(
+                    "UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                    (wager, guild_id, user_id, wager),
                 )
-            if payout:
-                await db.execute(
-                    "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
-                    (payout, guild_id, user_id),
-                )
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message(
+                        "💸 Você não tem moedas suficientes na carteira para essa jogada. "
+                        "Confira com `/saldo` ou ganhe moedas com `/daily` e `/trabalhar`.",
+                        ephemeral=True,
+                    )
+                if payout:
+                    await db.execute(
+                        "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                        (payout, guild_id, user_id),
+                    )
             net = payout - wager
             await db.execute(
                 """INSERT INTO betting_history
@@ -145,8 +147,8 @@ class OptionalBetting(commands.Cog):
             discord.ui.Separator(),
             discord.ui.TextDisplay(
                 f"**Jogo:** {game}\n{result}\n\n{details}\n"
-                f"**Resultado líquido:** {net:+,} {config.CURRENCY_NAME}\n"
-                f"**Aposta:** {wager:,} {config.CURRENCY_NAME}\n\n"
+                f"**Resultado líquido:** {('∞' if infinite else f'{net:+,}')} {config.CURRENCY_NAME}\n"
+                f"**Aposta:** {format_coins(user_id, wager)} {config.CURRENCY_NAME}\n\n"
                 "Jogos opcionais com moedas virtuais; não há valor em dinheiro real."
             ),
             accent_colour=discord.Colour.from_rgb(145, 103, 255),
