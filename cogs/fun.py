@@ -710,18 +710,84 @@ class Fun(commands.Cog):
             descricao, (aposta or 0) * multiplicador,
         )
 
-    @app_commands.command(name="8ball", description="Consulte a bola mágica")
+    @app_commands.command(name="8ball", description="Analisa sua pergunta e responde com contexto")
     async def oito_bola(self, interaction: discord.Interaction, pergunta: str):
-        respostas = [
-            "🔮 Com certeza!", "✨ As chances são boas.",
-            "🌙 Talvez...", "💫 Pergunte novamente mais tarde.",
-            "🌀 Não parece provável.", "⭐ Os sinais são positivos!",
-        ]
-        embed = embed_jogo(
-            "🔮 Bola mágica",
-            f"**Pergunta:** {pergunta}\n\n**Resposta:** {random.choice(respostas)}",
+        import os
+        import aiohttp
+
+        pergunta = pergunta.strip()
+        if not pergunta:
+            return await interaction.response.send_message(
+                "Escreva uma pergunta para eu analisar.", ephemeral=True
+            )
+
+        await interaction.response.defer(thinking=True)
+
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        modelo = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        resposta = None
+
+        if api_key:
+            instrucoes = (
+                "Você é a Bola Mágica inteligente do bot Discord Sr.Alpha. "
+                "Responda sempre em português brasileiro, de forma direta e útil. "
+                "Não sorteie respostas genéricas e nunca diga apenas 'pergunte novamente mais tarde'. "
+                "Para perguntas de sim/não, dê SIM ou NÃO logo no começo e explique brevemente os motivos. "
+                "Para perguntas como 'qual personagem é o mais forte?', compare personagens usando "
+                "informações conhecidas do universo citado, feitos, habilidades e versões/cânone; "
+                "diga qual vence segundo esses critérios e ressalve quando depende da versão ou contexto. "
+                "Para perguntas factuais, use conhecimento confiável e admita incerteza quando necessário. "
+                "Não invente estatísticas nem afirme que consultou fontes ao vivo. "
+                "Se houver ambiguidade, responda com a interpretação mais provável e diga qual assumiu. "
+                "Mantenha a resposta em até 120 palavras."
+            )
+            try:
+                timeout = aiohttp.ClientTimeout(total=18)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": modelo,
+                            "messages": [
+                                {"role": "system", "content": instrucoes},
+                                {"role": "user", "content": pergunta},
+                            ],
+                            "temperature": 0.2,
+                            "max_tokens": 220,
+                        },
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            resposta = data["choices"][0]["message"]["content"].strip()
+                        else:
+                            resposta = None
+            except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, TypeError):
+                resposta = None
+
+        if not resposta:
+            pergunta_lower = pergunta.casefold()
+            if any(p in pergunta_lower for p in ("rayquaza", "pokémon", "pokemon")):
+                resposta = (
+                    "🐉 **Sobre Pokémon:** posso dar uma resposta melhor quando a IA estiver "
+                    "configurada. Em geral, Rayquaza é um Pokémon lendário extremamente poderoso; "
+                    "Mega Rayquaza é especialmente forte em batalhas, mas dizer quem é o mais forte "
+                    "de todos depende do critério e da forma considerada."
+                )
+            else:
+                resposta = (
+                    "Não consegui analisar essa pergunta agora porque a IA não está disponível. "
+                    "Configure/verifique OPENAI_API_KEY e OPENAI_MODEL no Railway e tente novamente."
+                )
+
+        painel = embed_jogo(
+            "🔮 Bola mágica • Análise",
+            f"**Pergunta:** {pergunta[:1000]}\n\n**Análise do Sr.Alpha:** {resposta[:3500]}",
         )
-        await interaction.response.send_message(view=embed)
+        await interaction.followup.send(view=painel)
 
     @app_commands.command(name="duelo", description="Desafie a sorte em um duelo")
     @app_commands.choices(modo=MODOS)
