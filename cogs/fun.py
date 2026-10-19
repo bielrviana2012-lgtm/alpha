@@ -724,8 +724,8 @@ class Fun(commands.Cog):
 
         await interaction.response.defer(thinking=True)
 
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        modelo = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        modelo = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
         resposta = None
 
         if api_key:
@@ -743,46 +743,56 @@ class Fun(commands.Cog):
                 "Mantenha a resposta em até 120 palavras."
             )
             try:
-                timeout = aiohttp.ClientTimeout(total=18)
+                timeout = aiohttp.ClientTimeout(total=25)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(
-                        "https://api.openai.com/v1/chat/completions",
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
                         headers={
-                            "Authorization": f"Bearer {api_key}",
+                            "x-goog-api-key": api_key,
                             "Content-Type": "application/json",
                         },
                         json={
-                            "model": modelo,
-                            "messages": [
-                                {"role": "system", "content": instrucoes},
-                                {"role": "user", "content": pergunta},
-                            ],
-                            "temperature": 0.2,
-                            "max_tokens": 220,
+                            "systemInstruction": {
+                                "parts": [{"text": instrucoes}]
+                            },
+                            "contents": [{
+                                "role": "user",
+                                "parts": [{"text": pergunta}],
+                            }],
+                            "generationConfig": {
+                                "temperature": 0.2,
+                                "maxOutputTokens": 220,
+                            },
                         },
                     ) as response:
+                        data = await response.json()
                         if response.status == 200:
-                            data = await response.json()
-                            resposta = data["choices"][0]["message"]["content"].strip()
+                            resposta = (
+                                data.get("candidates", [{}])[0]
+                                .get("content", {})
+                                .get("parts", [{}])[0]
+                                .get("text", "")
+                                .strip()
+                            ) or None
                         else:
-                            resposta = None
-            except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, TypeError):
-                resposta = None
+                            # Registra a causa no log do Railway sem revelar a chave.
+                            import logging
+                            logging.getLogger("Sr.Alpha").error(
+                                "Gemini API retornou HTTP %s: %s",
+                                response.status,
+                                str(data)[:700],
+                            )
+            except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
+                import logging
+                logging.getLogger("Sr.Alpha").exception("Falha ao consultar a Gemini: %s", exc)
 
         if not resposta:
-            pergunta_lower = pergunta.casefold()
-            if any(p in pergunta_lower for p in ("rayquaza", "pokémon", "pokemon")):
-                resposta = (
-                    "🐉 **Sobre Pokémon:** posso dar uma resposta melhor quando a IA estiver "
-                    "configurada. Em geral, Rayquaza é um Pokémon lendário extremamente poderoso; "
-                    "Mega Rayquaza é especialmente forte em batalhas, mas dizer quem é o mais forte "
-                    "de todos depende do critério e da forma considerada."
-                )
-            else:
-                resposta = (
-                    "Não consegui analisar essa pergunta agora porque a IA não está disponível. "
-                    "Configure/verifique OPENAI_API_KEY e OPENAI_MODEL no Railway e tente novamente."
-                )
+            resposta = (
+                "Não consegui obter uma resposta da Gemini agora. "
+                "Confira se GEMINI_API_KEY está configurada no Railway e se o modelo "
+                "definido em GEMINI_MODEL está disponível para sua chave. "
+                "Se continuar, confira os logs do serviço para ver o erro da API."
+            )
 
         painel = embed_jogo(
             "🔮 Bola mágica • Análise",
