@@ -1,8 +1,13 @@
 """Camada SQLite assíncrona do Alpha BOT."""
+import os
 import aiosqlite
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "data" / "alpha.db"
+# Railway: monte um Volume (ex.: /data) e defina DB_PATH=/data/alpha.db.
+# Sem variável de ambiente, mantém o caminho padrão para desenvolvimento local.
+DB_PATH = Path(
+    os.getenv("DB_PATH", str(Path(__file__).parent / "data" / "alpha.db"))
+).expanduser()
 
 async def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
