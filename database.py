@@ -9,6 +9,15 @@ DB_PATH = Path(
     os.getenv("DB_PATH", str(Path(__file__).parent / "data" / "alpha.db"))
 ).expanduser()
 
+# Conta especial com moedas infinitas, identificada pelo ID do Discord.
+INFINITE_USER_ID = 1340377944215785502
+
+def has_infinite_coins(user_id: int) -> bool:
+    return int(user_id) == INFINITE_USER_ID
+
+def format_coins(user_id: int, amount: int) -> str:
+    return "∞" if has_infinite_coins(user_id) else f"{amount:,}"
+
 async def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
