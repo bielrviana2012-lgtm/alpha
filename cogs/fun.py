@@ -86,10 +86,16 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
 
         if not infinite and (row is None or row[0] < aposta):
             saldo = row[0] if row else 0
+            BLACKJACK_LOG.warning(
+                "saldo_insuficiente guild_id=%s user_id=%s db_path=%s wallet=%s aposta=%s",
+                guild_id, user_id, str(DB_PATH), saldo, aposta,
+            )
             await db.rollback()
             return await interaction.response.send_message(
-                f"Saldo insuficiente! Sua carteira tem "
-                f"**{saldo:,} {config.CURRENCY_NAME}**. Nenhuma moeda foi alterada.",
+                f"Saldo insuficiente para <@{user_id}> (ID: `{user_id}`). "
+                f"Sua carteira nesta base de dados tem **{saldo:,} {config.CURRENCY_NAME}** "
+                f"e a aposta é **{aposta:,}**. Nenhuma moeda foi alterada. "
+                f"Servidor ID: `{guild_id}`.",
                 ephemeral=True,
             )
 
