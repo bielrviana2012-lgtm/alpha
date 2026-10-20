@@ -1,6 +1,7 @@
 
 import random
 import asyncio
+import logging
 import discord
 import aiosqlite
 
@@ -20,6 +21,11 @@ MODOS = [
     app_commands.Choice(name="🎮 Brincadeira grátis", value="free"),
     app_commands.Choice(name="🪙 Apostar Alpha Coins", value="bet"),
 ]
+
+# Uma única partida de 21 ativa por jogador neste processo.
+# A reserva é feita antes do primeiro await para impedir comandos simultâneos.
+ACTIVE_BLACKJACKS = set()
+BLACKJACK_LOG = logging.getLogger("Sr.Alpha.blackjack")
 
 
 def embed_jogo(titulo, descricao, cor=COR):
@@ -152,7 +158,11 @@ class BlackjackView(discord.ui.LayoutView):
         self.dealer_cards = [self.deck.pop(), self.deck.pop()]
         self.result_text = ""
         self.message = None
+        self._active_key = (guild_id, owner_id)
         self._build()
+
+    def _release_active(self):
+        ACTIVE_BLACKJACKS.discard(self._active_key)
 
     @staticmethod
     def _make_deck():
@@ -304,12 +314,20 @@ class BlackjackView(discord.ui.LayoutView):
                 self.result_text += f"\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
 
         self._build()
-        await interaction.response.edit_message(view=self)
+        # A liquidação já ocorreu; libere o jogador antes da atualização visual,
+        # que pode falhar mesmo depois de o saldo ter sido processado.
+        self._release_active()
         self.stop()
+        BLACKJACK_LOG.info(
+            "settlement=finished guild=%s user=%s mode=%s bet=%s result=%s",
+            self.guild_id, self.owner_id, self.modo, self.aposta, reason
+        )
+        await interaction.response.edit_message(view=self)
 
     async def on_timeout(self):
         async with self._settlement_lock:
             if self.done:
+                self._release_active()
                 return
             self.done = True
             self.result_text = "⌛ A partida expirou."
@@ -327,12 +345,17 @@ class BlackjackView(discord.ui.LayoutView):
                     f" Sua aposta de {self.aposta:,} "
                     f"{config.CURRENCY_NAME} foi devolvida."
                 )
+                BLACKJACK_LOG.warning(
+                    "settlement=timeout_refund guild=%s user=%s bet=%s",
+                    self.guild_id, self.owner_id, self.aposta
+                )
             self._build()
             if self.message:
                 try:
                     await self.message.edit(view=self)
                 except discord.HTTPException:
                     pass
+            self._release_active()
 
 
 class QuizView(discord.ui.LayoutView):
@@ -631,56 +654,71 @@ class Fun(commands.Cog):
             )
 
         valor_aposta = 0
-        if modo.value == "bet":
-            if aposta is None or aposta < 1:
-                return await interaction.response.send_message(
-                    "Informe uma aposta de pelo menos 1 Alpha Coin. "
-                    "O Sr.Alpha não aposta sua carteira inteira automaticamente.",
-                    ephemeral=True,
-                )
+        if modo.value == "bet" and (aposta is None or aposta < 1):
+            return await interaction.response.send_message(
+                "Informe uma aposta de pelo menos 1 Alpha Coin. "
+                "O Sr.Alpha não aposta sua carteira inteira automaticamente.",
+                ephemeral=True,
+            )
 
-            valor_aposta = aposta
-            await ensure_user(interaction.guild.id, interaction.user.id)
-            infinite = has_infinite_coins(interaction.user.id)
+        active_key = (interaction.guild.id, interaction.user.id)
+        if active_key in ACTIVE_BLACKJACKS:
+            return await interaction.response.send_message(
+                "Você já tem uma partida de **21** em andamento. "
+                "Termine-a antes de iniciar outra.",
+                ephemeral=True,
+            )
+        ACTIVE_BLACKJACKS.add(active_key)
 
-            # Validação e débito ocorrem numa única transação SQLite.
-            # Duas partidas simultâneas não conseguem reservar o mesmo saldo.
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("BEGIN IMMEDIATE")
-                cursor = await db.execute(
-                    "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
-                    (interaction.guild.id, interaction.user.id),
-                )
-                row = await cursor.fetchone()
-                saldo = row[0] if row else 0
+        valor_aposta = aposta if modo.value == "bet" else 0
+        infinite = has_infinite_coins(interaction.user.id)
+        try:
+            if modo.value == "bet":
+                await ensure_user(interaction.guild.id, interaction.user.id)
 
-                if not infinite and saldo < valor_aposta:
-                    await db.rollback()
-                    return await interaction.response.send_message(
-                        f"Saldo insuficiente. Sua carteira tem "
-                        f"{saldo:,} {config.CURRENCY_NAME}.",
-                        ephemeral=True,
-                    )
-
-                if not infinite:
+                # A reserva de partida impede dois /21 do mesmo jogador.
+                # O débito também é protegido por uma transação SQLite.
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("BEGIN IMMEDIATE")
                     cursor = await db.execute(
-                        "UPDATE users SET wallet=wallet-? "
-                        "WHERE guild_id=? AND user_id=? AND wallet>=?",
-                        (
-                            valor_aposta,
-                            interaction.guild.id,
-                            interaction.user.id,
-                            valor_aposta,
-                        ),
+                        "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                        (interaction.guild.id, interaction.user.id),
                     )
-                    if cursor.rowcount != 1:
+                    row = await cursor.fetchone()
+                    saldo = row[0] if row else 0
+
+                    if not infinite and saldo < valor_aposta:
                         await db.rollback()
+                        ACTIVE_BLACKJACKS.discard(active_key)
                         return await interaction.response.send_message(
-                            "Não consegui reservar sua aposta. "
-                            "Nenhuma moeda foi alterada; confira /saldo.",
+                            f"Saldo insuficiente. Sua carteira tem "
+                            f"{saldo:,} {config.CURRENCY_NAME}.",
                             ephemeral=True,
                         )
-                await db.commit()
+
+                    if not infinite:
+                        cursor = await db.execute(
+                            "UPDATE users SET wallet=wallet-? "
+                            "WHERE guild_id=? AND user_id=? AND wallet>=?",
+                            (
+                                valor_aposta,
+                                interaction.guild.id,
+                                interaction.user.id,
+                                valor_aposta,
+                            ),
+                        )
+                        if cursor.rowcount != 1:
+                            await db.rollback()
+                            ACTIVE_BLACKJACKS.discard(active_key)
+                            return await interaction.response.send_message(
+                                "Não consegui reservar sua aposta. "
+                                "Nenhuma moeda foi alterada; confira /saldo.",
+                                ephemeral=True,
+                            )
+                    await db.commit()
+        except Exception:
+            ACTIVE_BLACKJACKS.discard(active_key)
+            raise
 
         partida = BlackjackView(
             owner_id=interaction.user.id,
@@ -690,12 +728,16 @@ class Fun(commands.Cog):
         )
         try:
             await interaction.response.send_message(view=partida)
+            partida.message = await interaction.original_response()
         except discord.HTTPException:
-            # Se a partida não puder ser publicada, devolve a aposta reservada.
+            # Desativa o timeout ANTES de reembolsar para impedir um segundo
+            # reembolso caso a View nunca tenha sido publicada.
+            partida.done = True
+            partida.stop()
             if (
                 modo.value == "bet"
                 and valor_aposta > 0
-                and not has_infinite_coins(interaction.user.id)
+                and not infinite
             ):
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute("BEGIN IMMEDIATE")
@@ -705,9 +747,20 @@ class Fun(commands.Cog):
                         (valor_aposta, interaction.guild.id, interaction.user.id),
                     )
                     await db.commit()
+                BLACKJACK_LOG.warning(
+                    "settlement=publish_failure_refund guild=%s user=%s bet=%s",
+                    interaction.guild.id, interaction.user.id, valor_aposta
+                )
+            ACTIVE_BLACKJACKS.discard(active_key)
             raise
-
-        partida.message = await interaction.original_response()
+        except Exception:
+            # Se o envio foi aceito mas a leitura da resposta falhou, não
+            # devolvemos automaticamente: isso poderia duplicar o saldo.
+            if not partida.done:
+                partida.stop()
+                partida.done = True
+            ACTIVE_BLACKJACKS.discard(active_key)
+            raise
 
     @app_commands.command(name="caraoucoroa", description="Adivinhe o resultado da moeda")
     @app_commands.choices(
