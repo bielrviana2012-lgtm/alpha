@@ -232,6 +232,70 @@ class OptionalBetting(commands.Cog):
         await self.play(interaction, "Caça-níquel virtual", valor, won, payout,
                         " | ".join(symbols))
 
+    @app_commands.command(name="apostar", description="Abra o menu de apostas com Sr.Coins virtuais")
+    @app_commands.describe(
+        jogo="Escolha o jogo",
+        valor="Quantidade de Sr.Coins que deseja apostar",
+        escolha="Palpite para cara ou coroa",
+        numero="Número da sorte entre 1 e 5",
+    )
+    @app_commands.choices(
+        jogo=[
+            app_commands.Choice(name="Cara ou coroa", value="cara_coroa"),
+            app_commands.Choice(name="Número da sorte", value="sorte"),
+            app_commands.Choice(name="Caça-níquel", value="slots"),
+        ],
+        escolha=[
+            app_commands.Choice(name="Cara", value="cara"),
+            app_commands.Choice(name="Coroa", value="coroa"),
+        ],
+    )
+    @app_commands.guild_only()
+    async def apostar(
+        self,
+        interaction: discord.Interaction,
+        jogo: app_commands.Choice[str],
+        valor: app_commands.Range[int, MIN_BET, MAX_BET],
+        escolha: app_commands.Choice[str] = None,
+        numero: app_commands.Range[int, 1, 5] = None,
+    ):
+        if not await self.check_ready(interaction):
+            return
+
+        if jogo.value == "cara_coroa":
+            if escolha is None:
+                return await interaction.response.send_message(
+                    "Escolha Cara ou Coroa no campo escolha.", ephemeral=True
+                )
+            drawn = random.choice(("cara", "coroa"))
+            won = escolha.value == drawn
+            payout = valor * 2 if won else 0
+            result = f"A moeda caiu em **{drawn.title()}**. Sua escolha: **{escolha.name}**."
+            game_name = "Cara ou coroa"
+        elif jogo.value == "sorte":
+            if numero is None:
+                return await interaction.response.send_message(
+                    "Informe seu palpite de 1 a 5 no campo numero.", ephemeral=True
+                )
+            drawn = random.randint(1, 5)
+            won = numero == drawn
+            payout = valor * 4 if won else 0
+            result = f"Número sorteado: **{drawn}**. Seu palpite: **{numero}**."
+            game_name = "Número da sorte"
+        else:
+            symbols = [random.choice(("🍒", "🍋", "⭐", "💎", "🔔")) for _ in range(3)]
+            if symbols[0] == symbols[1] == symbols[2]:
+                payout = valor * 4
+            elif len(set(symbols)) == 2:
+                payout = valor * 2
+            else:
+                payout = 0
+            won = payout > 0
+            result = " | ".join(symbols)
+            game_name = "Caça-níquel virtual"
+
+        await self.play(interaction, game_name, valor, won, payout, result)
+
     @app_commands.command(name="apostar_historico", description="Veja seu histórico recente dos jogos opcionais")
     @app_commands.guild_only()
     async def apostar_historico(self, interaction: discord.Interaction):
