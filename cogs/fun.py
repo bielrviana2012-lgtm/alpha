@@ -314,13 +314,15 @@ class BlackjackView(discord.ui.LayoutView):
                 self.result_text += f"\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
 
         self._build()
-        await interaction.response.edit_message(view=self)
+        # A liquidação já ocorreu; libere o jogador antes da atualização visual,
+        # que pode falhar mesmo depois de o saldo ter sido processado.
+        self._release_active()
+        self.stop()
         BLACKJACK_LOG.info(
             "settlement=finished guild=%s user=%s mode=%s bet=%s result=%s",
             self.guild_id, self.owner_id, self.modo, self.aposta, reason
         )
-        self._release_active()
-        self.stop()
+        await interaction.response.edit_message(view=self)
 
     async def on_timeout(self):
         async with self._settlement_lock:
