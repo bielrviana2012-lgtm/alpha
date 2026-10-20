@@ -1,9 +1,13 @@
-"""Arcade Premium gratuito do Sr.Alpha: oito jogos interativos sem apostas."""
+"""Arcade Premium do Sr.Alpha com modo grátis e apostas de moedas virtuais."""
 import asyncio
 import random
 import discord
+import aiosqlite
 from discord import app_commands
 from discord.ext import commands
+
+from database import DB_PATH, ensure_user, has_infinite_coins
+import config
 
 PURPLE = discord.Colour.from_rgb(145, 103, 255)
 GREEN = discord.Colour.from_rgb(46, 204, 113)
@@ -13,10 +17,14 @@ ACTIVE = set()
 
 
 class ArcadeView(discord.ui.LayoutView):
-    def __init__(self, game, owner_id):
+    def __init__(self, game, owner_id, guild_id, mode, wager):
         super().__init__(timeout=90)
         self.game = game
         self.owner_id = owner_id
+        self.guild_id = guild_id
+        self.mode = mode
+        self.wager = wager or 0
+        self.settled = False
         self.done = False
         self.lock = asyncio.Lock()
         self.points = 0
@@ -47,7 +55,11 @@ class ArcadeView(discord.ui.LayoutView):
             text += f"\n**Sua mão:** {self.total}"
         elif self.game == "Maior ou Menor":
             text += f"\n**Carta atual:** {self.card_name(self.card)}"
-        text += "\n\n🎮 **Modo brincadeira — sem apostas ou moedas.**"
+        if self.mode == "bet":
+            text += f"\n**Aposta:** {self.wager:,} {config.CURRENCY_NAME}"
+            text += "\n🪙 **Modo aposta — moedas virtuais.**"
+        else:
+            text += "\n\n🎮 **Modo brincadeira — sem apostas ou moedas.**"
         if extra:
             text += "\n\n" + extra
         box.add_item(discord.ui.TextDisplay(text[:3900]))
@@ -112,12 +124,59 @@ class ArcadeView(discord.ui.LayoutView):
             return False
         return True
 
+    def payout_amount(self):
+        if self.game == "Crash Alpha":
+            return int(self.wager * self.multiplier) if self.points > 0 else 0
+        if self.game == "Torre Alpha":
+            return int(self.wager * self.multiplier) if self.floor > 0 else 0
+        if self.game == "Caça ao Dragão":
+            return int(self.wager * self.multiplier) if self.floor > 0 else 0
+        if self.game in ("Cofre Misterioso", "Caixa da Fortuna"):
+            return int(self.wager * self.points / 100)
+        if self.game == "Roleta Alpha 2.0":
+            return int(self.wager * self.points / 100)
+        if self.game == "Blackjack Premium":
+            return self.wager * 2 if self.points >= 200 else self.wager if self.points >= 100 else 0
+        if self.game == "Maior ou Menor":
+            return self.wager * 2 if self.points >= 100 else self.wager if self.points >= 50 else 0
+        return 0
+
+    async def settle(self, crashed=False):
+        if self.mode != "bet" or self.settled:
+            return ""
+        self.settled = True
+        returned = 0 if crashed else self.payout_amount()
+        infinite = has_infinite_coins(self.owner_id)
+        if returned and not infinite:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                await db.execute(
+                    "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
+                    (returned, self.guild_id, self.owner_id),
+                )
+                await db.commit()
+        if infinite:
+            balance = "∞"
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                row = await (await db.execute(
+                    "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                    (self.guild_id, self.owner_id),
+                )).fetchone()
+            balance = f"{row[0]:,}" if row else "0"
+        net = returned - self.wager
+        return (f"\n\n🪙 **Aposta:** {self.wager:,} {config.CURRENCY_NAME}"
+                f"\n**Retorno:** {returned:,} {config.CURRENCY_NAME}"
+                f"\n**Resultado líquido:** {net:+,} {config.CURRENCY_NAME}"
+                f"\n**Carteira:** {balance} {config.CURRENCY_NAME}")
+
     async def finish(self, interaction, message, colour=GREEN):
         if self.done:
             return await interaction.response.send_message("Esta partida já terminou.", ephemeral=True)
         self.done = True
-        ACTIVE.discard((interaction.guild_id, self.owner_id))
-        self._build(message + f"\n\n🏆 **Pontuação final:** {self.points}", colour)
+        settlement = await self.settle()
+        ACTIVE.discard((self.guild_id, self.owner_id))
+        self._build(message + f"\n\n🏆 **Pontuação final:** {self.points}" + settlement, colour)
         self.stop()
         if interaction.response.is_done():
             await interaction.edit_original_response(view=self)
@@ -209,24 +268,54 @@ class ArcadeView(discord.ui.LayoutView):
         return callback
 
     async def on_timeout(self):
-        ACTIVE.discard((getattr(self, "guild_id", None), self.owner_id))
+        if self.done:
+            return
         self.done = True
+        settlement = await self.settle()
+        ACTIVE.discard((self.guild_id, self.owner_id))
+        self._build("⌛ A partida expirou." + settlement, RED)
         self.stop()
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 class ArcadePremium(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def start(self, interaction, game):
+    async def start(self, interaction, game, mode, wager=None):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         key = (interaction.guild_id, interaction.user.id)
         if key in ACTIVE:
             return await interaction.response.send_message("Você já tem uma partida do Arcade Premium em andamento.", ephemeral=True)
+        if mode == "bet":
+            if wager is None:
+                return await interaction.response.send_message("Informe o valor da aposta.", ephemeral=True)
+            await ensure_user(interaction.guild_id, interaction.user.id)
+            if not has_infinite_coins(interaction.user.id):
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    cur = await db.execute(
+                        "UPDATE users SET wallet = wallet - ? WHERE guild_id = ? AND user_id = ? AND wallet >= ?",
+                        (wager, interaction.guild_id, interaction.user.id, wager),
+                    )
+                    if cur.rowcount != 1:
+                        row = await (await db.execute(
+                            "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                            (interaction.guild_id, interaction.user.id),
+                        )).fetchone()
+                        await db.rollback()
+                        return await interaction.response.send_message(
+                            f"Saldo insuficiente. Sua carteira tem {row[0] if row else 0:,} {config.CURRENCY_NAME}.",
+                            ephemeral=True,
+                        )
+                    await db.commit()
         ACTIVE.add(key)
-        view = ArcadeView(game, interaction.user.id)
-        view.guild_id = interaction.guild_id
+        view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager)
         await interaction.response.send_message(view=view)
         view.message = await interaction.original_response()
         if game == "Crash Alpha":
@@ -242,8 +331,9 @@ class ArcadePremium(commands.Cog):
                     view.multiplier = round(view.multiplier * 1.15, 2)
                     if view.multiplier >= view.crash_at:
                         view.done = True
+                        settlement = await view.settle(crashed=True)
                         ACTIVE.discard((view.guild_id, view.owner_id))
-                        view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada.", RED)
+                        view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada." + settlement, RED)
                         view.stop()
                     else:
                         view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
@@ -252,45 +342,125 @@ class ArcadePremium(commands.Cog):
         except (discord.HTTPException, asyncio.CancelledError):
             return
 
-    @app_commands.command(name="crash", description="Jogue Crash Alpha em modo gratuito")
+    @app_commands.command(name="crash", description="Jogue Crash Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def crash(self, interaction: discord.Interaction):
-        await self.start(interaction, "Crash Alpha")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def crash(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Crash Alpha", modo.value, aposta)
 
-    @app_commands.command(name="cofre", description="Escolha um cofre misterioso")
+    @app_commands.command(name="cofre", description="Escolha um cofre misterioso grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def cofre(self, interaction: discord.Interaction):
-        await self.start(interaction, "Cofre Misterioso")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def cofre(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Cofre Misterioso", modo.value, aposta)
 
-    @app_commands.command(name="roleta2", description="Gire a Roleta Alpha 2.0")
+    @app_commands.command(name="roleta2", description="Gire a Roleta Alpha 2.0 grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def roleta2(self, interaction: discord.Interaction):
-        await self.start(interaction, "Roleta Alpha 2.0")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def roleta2(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Roleta Alpha 2.0", modo.value, aposta)
 
-    @app_commands.command(name="blackjack", description="Jogue Blackjack Premium sem apostas")
+    @app_commands.command(name="blackjack", description="Jogue Blackjack Premium grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def blackjack(self, interaction: discord.Interaction):
-        await self.start(interaction, "Blackjack Premium")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def blackjack(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Blackjack Premium", modo.value, aposta)
 
-    @app_commands.command(name="torre", description="Suba a Torre Alpha")
+    @app_commands.command(name="torre", description="Suba a Torre Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def torre(self, interaction: discord.Interaction):
-        await self.start(interaction, "Torre Alpha")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def torre(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Torre Alpha", modo.value, aposta)
 
-    @app_commands.command(name="fortuna", description="Abra uma Caixa da Fortuna")
+    @app_commands.command(name="fortuna", description="Abra uma Caixa da Fortuna grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def fortuna(self, interaction: discord.Interaction):
-        await self.start(interaction, "Caixa da Fortuna")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def fortuna(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Caixa da Fortuna", modo.value, aposta)
 
-    @app_commands.command(name="dragao", description="Enfrente as etapas da Caça ao Dragão")
+    @app_commands.command(name="dragao", description="Enfrente as etapas da Caça ao Dragão grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def dragao(self, interaction: discord.Interaction):
-        await self.start(interaction, "Caça ao Dragão")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def dragao(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Caça ao Dragão", modo.value, aposta)
 
-    @app_commands.command(name="maioroumenor", description="Adivinhe se a próxima carta será maior ou menor")
+    @app_commands.command(name="maioroumenor", description="Adivinhe se a próxima carta será maior ou menor grátis ou com aposta virtual")
     @app_commands.guild_only()
-    async def maioroumenor(self, interaction: discord.Interaction):
-        await self.start(interaction, "Maior ou Menor")
+    @app_commands.choices(modo=[
+        app_commands.Choice(name="🎮 Brincar grátis", value="free"),
+        app_commands.Choice(name="🪙 Apostar Sr.Coins", value="bet"),
+    ])
+    @app_commands.describe(modo="Modo de jogo", aposta="Valor de Sr.Coins para apostar (obrigatório no modo aposta)")
+    async def maioroumenor(
+        self,
+        interaction: discord.Interaction,
+        modo: app_commands.Choice[str],
+        aposta: app_commands.Range[int, 1, 1000000000] = None,
+    ):
+        await self.start(interaction, "Maior ou Menor", modo.value, aposta)
 
 
 async def setup(bot):
