@@ -188,9 +188,29 @@ class ArcadeView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
     async def cashout(self, interaction):
+        # Reconhece o clique imediatamente: o temporizador do Crash também
+        # usa este lock e pode estar terminando uma atualização de mensagem.
+        is_crash = self.game == "Crash Alpha"
+        if is_crash:
+            await interaction.response.defer()
+
         async with self.lock:
+            if self.done:
+                if is_crash:
+                    return await interaction.followup.send(
+                        "Esta rodada já terminou; o Crash aconteceu antes do saque.",
+                        ephemeral=True,
+                    )
+                return await interaction.response.send_message(
+                    "Esta partida já terminou.", ephemeral=True
+                )
+
             self.points += max(1, int(100 * self.multiplier))
-            await self.finish(interaction, f"✨ Rodada encerrada em **{self.multiplier:.2f}x**!", GREEN)
+            await self.finish(
+                interaction,
+                f"✨ Rodada encerrada em **{self.multiplier:.2f}x**!",
+                GREEN,
+            )
 
     async def make_choice(self, choice):
         async def callback(interaction):
@@ -272,21 +292,26 @@ class ArcadeView(discord.ui.LayoutView):
         return callback
 
     async def on_timeout(self):
-        if self.done:
-            return
-        self.done = True
-        settlement = await self.settle()
-        key = (self.guild_id, self.owner_id)
-        ACTIVE.discard(key)
-        if ACTIVE_VIEWS.get(key) is self:
-            ACTIVE_VIEWS.pop(key, None)
-        self._build("⌛ A partida expirou." + settlement, RED)
-        self.stop()
-        if self.message:
-            try:
-                await self.message.edit(view=self)
-            except discord.HTTPException:
-                pass
+        async with self.lock:
+            if self.done:
+                key = (self.guild_id, self.owner_id)
+                ACTIVE.discard(key)
+                if ACTIVE_VIEWS.get(key) is self:
+                    ACTIVE_VIEWS.pop(key, None)
+                return
+            self.done = True
+            settlement = await self.settle()
+            key = (self.guild_id, self.owner_id)
+            ACTIVE.discard(key)
+            if ACTIVE_VIEWS.get(key) is self:
+                ACTIVE_VIEWS.pop(key, None)
+            self._build("⌛ A partida expirou." + settlement, RED)
+            self.stop()
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    pass
 
 
 class ArcadePremium(commands.Cog):
@@ -298,8 +323,12 @@ class ArcadePremium(commands.Cog):
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         key = (interaction.guild_id, interaction.user.id)
         previous = ACTIVE_VIEWS.get(key)
-        if previous is not None and not previous.done:
-            return await interaction.response.send_message("Você já tem uma partida do Arcade Premium em andamento.", ephemeral=True)
+        if previous is not None and not previous.done and not previous.is_finished():
+            return await interaction.response.send_message(
+                "Você já tem uma partida do Arcade Premium em andamento.",
+                ephemeral=True,
+            )
+        # Limpa registros antigos caso a view já tenha terminado ou expirado.
         if previous is not None:
             ACTIVE_VIEWS.pop(key, None)
             ACTIVE.discard(key)
