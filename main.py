@@ -39,6 +39,7 @@ EXTENSIONS = (
     "cogs.updates",
     "cogs.embed_builder",
     "cogs.expansion",
+    "cogs.arcade_premium",
 )
 
 
