@@ -119,7 +119,10 @@ class ArcadeView(discord.ui.LayoutView):
         ACTIVE.discard((interaction.guild_id, self.owner_id))
         self._build(message + f"\n\n🏆 **Pontuação final:** {self.points}", colour)
         self.stop()
-        await interaction.response.edit_message(view=self)
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
 
     async def cashout(self, interaction):
         async with self.lock:
@@ -149,12 +152,10 @@ class ArcadeView(discord.ui.LayoutView):
         async with self.lock:
             if self.done:
                 return await interaction.response.send_message("Esta partida já terminou.", ephemeral=True)
+            await interaction.response.defer()
             for frame in ["🎡 Girando... ◐", "🎡 Girando... ◓", "🎡 Girando... ◑", "🎡 Girando... ◒"]:
                 self._build(frame)
-                if not interaction.response.is_done():
-                    await interaction.response.edit_message(view=self)
-                else:
-                    await interaction.edit_original_response(view=self)
+                await interaction.edit_original_response(view=self)
                 await asyncio.sleep(.3)
             mult = random.choice([0, .5, 1, 2, 3, 5])
             self.points += int(100 * mult)
@@ -232,19 +233,24 @@ class ArcadePremium(commands.Cog):
             asyncio.create_task(self.crash_timer(view))
 
     async def crash_timer(self, view):
-        await asyncio.sleep(random.uniform(4, 9))
-        async with view.lock:
-            if view.done:
-                return
-            view.done = True
-            ACTIVE.discard((view.guild_id, view.owner_id))
-            view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada.", RED)
-            view.stop()
-            if view.message:
-                try:
-                    await view.message.edit(view=view)
-                except discord.HTTPException:
-                    pass
+        try:
+            while not view.done:
+                await asyncio.sleep(0.5)
+                async with view.lock:
+                    if view.done:
+                        return
+                    view.multiplier = round(view.multiplier * 1.15, 2)
+                    if view.multiplier >= view.crash_at:
+                        view.done = True
+                        ACTIVE.discard((view.guild_id, view.owner_id))
+                        view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada.", RED)
+                        view.stop()
+                    else:
+                        view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
+                    if view.message:
+                        await view.message.edit(view=view)
+        except (discord.HTTPException, asyncio.CancelledError):
+            return
 
     @app_commands.command(name="crash", description="Jogue Crash Alpha em modo gratuito")
     @app_commands.guild_only()
