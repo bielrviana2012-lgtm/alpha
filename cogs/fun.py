@@ -22,10 +22,9 @@ MODOS = [
     app_commands.Choice(name="🪙 Apostar Alpha Coins", value="bet"),
 ]
 
-# Uma única partida de 21 ativa por jogador neste processo.
-# A reserva é feita antes do primeiro await para impedir comandos simultâneos.
-ACTIVE_BLACKJACKS = set()
-BLACKJACK_LOG = logging.getLogger("Sr.Alpha.blackjack")
+# Uma única partida de Mines ativa por jogador neste processo.
+ACTIVE_MINES = set()
+BLACKJACK_LOG = logging.getLogger("Sr.Alpha.games")
 
 
 def embed_jogo(titulo, descricao, cor=COR):
@@ -141,188 +140,141 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
     await interaction.response.send_message(view=embed)
 
 
-class BlackjackView(discord.ui.LayoutView):
-    """Jogo de 21 com ações de comprar carta ou parar."""
+class MinesView(discord.ui.LayoutView):
+    """Mines com quantidade configurável de minas e saque manual."""
 
-    def __init__(self, owner_id, guild_id, modo, aposta):
+    TILE_COUNT = 24
+
+    def __init__(self, owner_id, guild_id, modo, aposta, minas):
         super().__init__(timeout=120)
-        self.owner_id = owner_id
-        self.guild_id = guild_id
-        self.modo = modo
-        self.aposta = aposta
+        self.owner_id, self.guild_id = owner_id, guild_id
+        self.modo, self.aposta, self.mine_count = modo, aposta, minas
+        self.mine_positions = set(random.sample(range(self.TILE_COUNT), minas))
+        self.revealed = set()
         self.done = False
-        self._settlement_lock = asyncio.Lock()
-        self.deck = self._make_deck()
-        random.shuffle(self.deck)
-        self.player_cards = [self.deck.pop(), self.deck.pop()]
-        self.dealer_cards = [self.deck.pop(), self.deck.pop()]
         self.result_text = ""
         self.message = None
+        self._settlement_lock = asyncio.Lock()
         self._active_key = (guild_id, owner_id)
         self._build()
 
     def _release_active(self):
-        ACTIVE_BLACKJACKS.discard(self._active_key)
+        ACTIVE_MINES.discard(self._active_key)
 
-    @staticmethod
-    def _make_deck():
-        suits = ["♠", "♥", "♦", "♣"]
-        cards = []
-        for suit in suits:
-            for label, value in [
-                ("A", 11), ("2", 2), ("3", 3), ("4", 4), ("5", 5),
-                ("6", 6), ("7", 7), ("8", 8), ("9", 9), ("10", 10),
-                ("J", 10), ("Q", 10), ("K", 10),
-            ]:
-                cards.append((label, value, suit))
-        return cards
-
-    @staticmethod
-    def _points(cards):
-        total = sum(card[1] for card in cards)
-        aces = sum(1 for card in cards if card[1] == 11)
-        while total > 21 and aces:
-            total -= 10
-            aces -= 1
-        return total
-
-    @staticmethod
-    def _show_cards(cards):
-        return "  ".join(f"[{label}{suit}]" for label, _, suit in cards)
+    def _multiplier(self):
+        probability = 1.0
+        for i in range(len(self.revealed)):
+            probability *= (self.TILE_COUNT - self.mine_count - i) / (self.TILE_COUNT - i)
+        return 0.0 if probability <= 0 else 0.97 / probability
 
     def _build(self):
         self.clear_items()
         panel = discord.ui.Container(accent_colour=COR)
-        panel.add_item(discord.ui.TextDisplay("# 🃏 SR.ALPHA • Desafio 21"))
+        panel.add_item(discord.ui.TextDisplay("# 💣 SR.ALPHA • Mines"))
         panel.add_item(discord.ui.Separator())
-        dealer_cards = self._show_cards(self.dealer_cards) if self.done else f"[{self.dealer_cards[0][0]}{self.dealer_cards[0][2]}]  [??]"
-        dealer_points = self._points(self.dealer_cards) if self.done else "?"
-        text = (
-            f"**Sr.Alpha:** {dealer_cards}\nPontos: **{dealer_points}**\n\n"
-            f"**Você:** {self._show_cards(self.player_cards)}\n"
-            f"Pontos: **{self._points(self.player_cards)}**"
-        )
+        safe_count = len(self.revealed)
+        multiplier = self._multiplier() if safe_count else 1.0
+        info = f"**Minas:** {self.mine_count} de {self.TILE_COUNT}\n**Casas seguras:** {safe_count}\n"
         if self.modo == "bet":
-            text += f"\n\n🪙 Aposta: **{self.aposta:,} {config.CURRENCY_NAME}**"
+            info += (f"**Aposta:** {self.aposta:,} {config.CURRENCY_NAME}\n"
+                     f"**Retorno se sacar agora:** {int(self.aposta * multiplier):,} "
+                     f"{config.CURRENCY_NAME} ({multiplier:.2f}x)")
         else:
-            text += "\n\n🎮 Modo brincadeira grátis"
-        panel.add_item(discord.ui.TextDisplay(text))
-
+            info += "**Modo:** 🎮 Brincadeira grátis"
+        panel.add_item(discord.ui.TextDisplay(info))
         if self.done:
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(self.result_text))
             panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
             self.add_item(panel)
             return
-
-        panel.add_item(discord.ui.TextDisplay("Escolha uma ação: **comprar carta** ou **parar**."))
+        panel.add_item(discord.ui.TextDisplay(
+            "Revele casas seguras. Se encontrar uma mina, perde a rodada. "
+            "Depois de revelar uma casa segura, você pode usar **💰 Sacar**."
+        ))
         panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
         self.add_item(panel)
-        row = discord.ui.ActionRow()
-        hit = discord.ui.Button(label="🃏 Comprar carta", style=discord.ButtonStyle.primary)
-        stand = discord.ui.Button(label="✋ Parar", style=discord.ButtonStyle.success)
-        hit.callback = self.hit
-        stand.callback = self.stand
-        row.add_item(hit)
-        row.add_item(stand)
-        self.add_item(row)
+
+        # 24 casas e o botão Sacar cabem em cinco linhas de cinco botões.
+        for row_index in range(5):
+            row = discord.ui.ActionRow()
+            for index in range(row_index * 5, min(row_index * 5 + 5, self.TILE_COUNT)):
+                if index in self.revealed:
+                    label = "💣" if index in self.mine_positions else "💎"
+                    button = discord.ui.Button(label=label, style=discord.ButtonStyle.danger if label == "💣" else discord.ButtonStyle.success, disabled=True)
+                else:
+                    button = discord.ui.Button(label="❔", style=discord.ButtonStyle.secondary)
+                    button.callback = self.make_tile_callback(index)
+                row.add_item(button)
+            if row_index == 4:
+                cashout = discord.ui.Button(label="💰 Sacar", style=discord.ButtonStyle.success, disabled=(safe_count == 0))
+                cashout.callback = self.cash_out
+                row.add_item(cashout)
+            self.add_item(row)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message(
-                "Esta partida pertence a outra pessoa.", ephemeral=True
-            )
+            await interaction.response.send_message("Esta partida pertence a outra pessoa.", ephemeral=True)
             return False
         return True
 
-    async def hit(self, interaction: discord.Interaction):
-        async with self._settlement_lock:
-            if self.done:
-                return await interaction.response.send_message(
-                    "Esta partida já terminou.", ephemeral=True
-                )
-            self.player_cards.append(self.deck.pop())
-            if self._points(self.player_cards) > 21:
-                await self._finish(interaction, "bust")
-            else:
+    def make_tile_callback(self, index):
+        async def callback(interaction: discord.Interaction):
+            async with self._settlement_lock:
+                if self.done:
+                    return await interaction.response.send_message("Esta partida já terminou.", ephemeral=True)
+                if index in self.revealed:
+                    return await interaction.response.send_message("Essa casa já foi revelada.", ephemeral=True)
+                if index in self.mine_positions:
+                    self.revealed.add(index)
+                    self.done = True
+                    self.revealed.update(self.mine_positions)
+                    self.result_text = "💥 **Você encontrou uma mina!** "
+                    self.result_text += f"Você perdeu a aposta de {self.aposta:,} moedas." if self.modo == "bet" else "Fim da rodada grátis."
+                    self._build()
+                    self._release_active()
+                    self.stop()
+                    BLACKJACK_LOG.info("mines=loss guild=%s user=%s mode=%s bet=%s mines=%s",
+                        self.guild_id, self.owner_id, self.modo, self.aposta, self.mine_count)
+                    return await interaction.response.edit_message(view=self)
+                self.revealed.add(index)
                 self._build()
                 await interaction.response.edit_message(view=self)
+        return callback
 
-    async def stand(self, interaction: discord.Interaction):
+    async def cash_out(self, interaction: discord.Interaction):
         async with self._settlement_lock:
             if self.done:
-                return await interaction.response.send_message(
-                    "Esta partida já terminou.", ephemeral=True
-                )
-            await self._finish(interaction, "stand")
-
-    async def _finish(self, interaction: discord.Interaction, reason: str):
-        self.done = True
-        player_points = self._points(self.player_cards)
-        dealer_points = self._points(self.dealer_cards)
-
-        if reason != "bust":
-            while dealer_points < 17 and self.deck:
-                self.dealer_cards.append(self.deck.pop())
-                dealer_points = self._points(self.dealer_cards)
-
-        if self.modo == "free":
-            if player_points > 21:
-                self.result_text = "💥 Você passou de 21! Sr.Alpha venceu."
-            elif dealer_points > 21 or player_points > dealer_points:
-                self.result_text = "🏆 Você venceu o Sr.Alpha!"
-            elif player_points == dealer_points:
-                self.result_text = "🤝 Empate!"
+                return await interaction.response.send_message("Esta partida já terminou.", ephemeral=True)
+            if not self.revealed:
+                return await interaction.response.send_message("Revele pelo menos uma casa segura antes de sacar.", ephemeral=True)
+            self.done = True
+            retorno = int(self.aposta * self._multiplier()) if self.modo == "bet" else 0
+            if self.modo == "bet":
+                if has_infinite_coins(self.owner_id):
+                    saldo_texto = "∞"
+                else:
+                    await ensure_user(self.guild_id, self.owner_id)
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("BEGIN IMMEDIATE")
+                        await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                            (retorno, self.guild_id, self.owner_id))
+                        cursor = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                            (self.guild_id, self.owner_id))
+                        row = await cursor.fetchone()
+                        await db.commit()
+                    saldo_texto = f"{row[0]:,}" if row else "0"
+                self.result_text = (f"💰 **Retorno total: {retorno:,} {config.CURRENCY_NAME}**\n"
+                    f"Lucro líquido: **{retorno - self.aposta:+,}** moedas.\n"
+                    f"Carteira atual: **{saldo_texto}** {config.CURRENCY_NAME}")
             else:
-                self.result_text = "💨 Sr.Alpha venceu desta vez."
-        else:
-            if player_points > 21:
-                retorno = 0
-                self.result_text = f"💥 Você passou de 21 e perdeu {self.aposta:,} moedas."
-            elif dealer_points > 21 or player_points > dealer_points:
-                retorno = self.aposta * 2
-                self.result_text = f"🏆 Você venceu e recebeu {retorno:,} moedas (aposta incluída)!"
-            elif player_points == dealer_points:
-                retorno = self.aposta
-                self.result_text = f"🤝 Empate! Sua aposta de {self.aposta:,} moedas foi devolvida."
-            else:
-                retorno = 0
-                self.result_text = f"💨 Você perdeu {self.aposta:,} moedas."
-
-            # A aposta já foi debitada uma única vez ao iniciar a partida.
-            # Na derrota não há novo débito: uma aposta de 5 só pode custar 5.
-            if retorno > 0 and not has_infinite_coins(self.owner_id):
-                await ensure_user(self.guild_id, self.owner_id)
-                async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute("BEGIN IMMEDIATE")
-                    await db.execute(
-                        "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
-                        (retorno, self.guild_id, self.owner_id),
-                    )
-                    await db.commit()
-
-            if has_infinite_coins(self.owner_id):
-                self.result_text += f"\n💰 Carteira atual: ∞ {config.CURRENCY_NAME}"
-            else:
-                async with aiosqlite.connect(DB_PATH) as db:
-                    cursor = await db.execute(
-                        "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
-                        (self.guild_id, self.owner_id),
-                    )
-                    row = await cursor.fetchone()
-                    saldo = row[0] if row else 0
-                self.result_text += f"\n💰 Carteira atual: {format_coins(self.owner_id, saldo)} {config.CURRENCY_NAME}"
-
-        self._build()
-        # A liquidação já ocorreu; libere o jogador antes da atualização visual,
-        # que pode falhar mesmo depois de o saldo ter sido processado.
-        self._release_active()
-        self.stop()
-        BLACKJACK_LOG.info(
-            "settlement=finished guild=%s user=%s mode=%s bet=%s result=%s",
-            self.guild_id, self.owner_id, self.modo, self.aposta, reason
-        )
-        await interaction.response.edit_message(view=self)
+                self.result_text = f"💎 Você sacou após revelar **{len(self.revealed)}** casas seguras!"
+            self._build()
+            self._release_active()
+            self.stop()
+            BLACKJACK_LOG.info("mines=cashout guild=%s user=%s mode=%s bet=%s mines=%s safe=%s payout=%s",
+                self.guild_id, self.owner_id, self.modo, self.aposta, self.mine_count, len(self.revealed), retorno)
+            await interaction.response.edit_message(view=self)
 
     async def on_timeout(self):
         async with self._settlement_lock:
@@ -330,25 +282,35 @@ class BlackjackView(discord.ui.LayoutView):
                 self._release_active()
                 return
             self.done = True
-            self.result_text = "⌛ A partida expirou."
             if self.modo == "bet" and self.aposta > 0:
-                if not has_infinite_coins(self.owner_id):
+                # Sem nenhuma casa revelada, devolve a reserva. Se já houve
+                # progresso, liquida como saque automático para evitar abuso.
+                retorno = int(self.aposta * self._multiplier()) if self.revealed else self.aposta
+                if has_infinite_coins(self.owner_id):
+                    saldo_texto = "∞"
+                else:
                     await ensure_user(self.guild_id, self.owner_id)
                     async with aiosqlite.connect(DB_PATH) as db:
                         await db.execute("BEGIN IMMEDIATE")
-                        await db.execute(
-                            "UPDATE users SET wallet = wallet + ? WHERE guild_id = ? AND user_id = ?",
-                            (self.aposta, self.guild_id, self.owner_id),
-                        )
+                        await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                            (retorno, self.guild_id, self.owner_id))
+                        cursor = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                            (self.guild_id, self.owner_id))
+                        row = await cursor.fetchone()
                         await db.commit()
-                self.result_text += (
-                    f" Sua aposta de {self.aposta:,} "
-                    f"{config.CURRENCY_NAME} foi devolvida."
-                )
-                BLACKJACK_LOG.warning(
-                    "settlement=timeout_refund guild=%s user=%s bet=%s",
-                    self.guild_id, self.owner_id, self.aposta
-                )
+                    saldo_texto = f"{row[0]:,}" if row else "0"
+                if self.revealed:
+                    self.result_text = (
+                        f"⌛ Tempo esgotado; saque automático de {retorno:,} "
+                        f"{config.CURRENCY_NAME}. Carteira: {saldo_texto}."
+                    )
+                else:
+                    self.result_text = (
+                        f"⌛ Expirou sem casas reveladas. A aposta de {self.aposta:,} "
+                        f"{config.CURRENCY_NAME} foi devolvida. Carteira: {saldo_texto}."
+                    )
+            else:
+                self.result_text = "⌛ A partida grátis expirou."
             self._build()
             if self.message:
                 try:
@@ -356,6 +318,8 @@ class BlackjackView(discord.ui.LayoutView):
                 except discord.HTTPException:
                     pass
             self._release_active()
+            BLACKJACK_LOG.info("mines=timeout guild=%s user=%s mode=%s bet=%s safe=%s",
+                self.guild_id, self.owner_id, self.modo, self.aposta, len(self.revealed))
 
 
 class QuizView(discord.ui.LayoutView):
@@ -446,7 +410,7 @@ class Fun(commands.Cog):
             "🎰 /slots — caça-níquel\n"
             "🎡 /roleta — roleta de cores\n"
             "🎲 /dados — duelo de dados\n"
-            "🃏 /21 — compre cartas ou pare; pode apostar a carteira toda\n"
+            "💣 /mines — escolha a quantidade de minas e saque no momento certo\n"
             "🪙 /caraoucoroa — adivinhe cara ou coroa\n"
             "🎁 /bau — abra um baú misterioso\n"
             "🔮 /8ball — consulte a bola mágica\n"
@@ -640,126 +604,72 @@ class Fun(commands.Cog):
             premio, empate,
         )
 
-    @app_commands.command(name="21", description="Jogue 21: compre cartas ou pare; pode apostar a carteira toda")
+    @app_commands.command(name="mines", description="Encontre casas seguras e saque antes de acertar uma mina")
     @app_commands.choices(modo=MODOS)
-    async def vinte_um(
+    async def mines(
         self,
         interaction: discord.Interaction,
         modo: app_commands.Choice[str],
+        minas: app_commands.Range[int, 1, 23],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         if interaction.guild is None:
-            return await interaction.response.send_message(
-                "Este jogo só funciona dentro do servidor.", ephemeral=True
-            )
-
-        valor_aposta = 0
+            return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         if modo.value == "bet" and (aposta is None or aposta < 1):
-            return await interaction.response.send_message(
-                "Informe uma aposta de pelo menos 1 Alpha Coin. "
-                "O Sr.Alpha não aposta sua carteira inteira automaticamente.",
-                ephemeral=True,
-            )
+            return await interaction.response.send_message("Informe uma aposta de pelo menos 1 Alpha Coin.", ephemeral=True)
 
         active_key = (interaction.guild.id, interaction.user.id)
-        if active_key in ACTIVE_BLACKJACKS:
-            return await interaction.response.send_message(
-                "Você já tem uma partida de **21** em andamento. "
-                "Termine-a antes de iniciar outra.",
-                ephemeral=True,
-            )
-        ACTIVE_BLACKJACKS.add(active_key)
-
+        if active_key in ACTIVE_MINES:
+            return await interaction.response.send_message("Você já tem uma partida de **Mines** em andamento. Termine-a antes de iniciar outra.", ephemeral=True)
+        ACTIVE_MINES.add(active_key)
         valor_aposta = aposta if modo.value == "bet" else 0
         infinite = has_infinite_coins(interaction.user.id)
         try:
             if modo.value == "bet":
                 await ensure_user(interaction.guild.id, interaction.user.id)
-
-                # A reserva de partida impede dois /21 do mesmo jogador.
-                # O débito também é protegido por uma transação SQLite.
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute("BEGIN IMMEDIATE")
-                    cursor = await db.execute(
-                        "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
-                        (interaction.guild.id, interaction.user.id),
-                    )
+                    cursor = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                        (interaction.guild.id, interaction.user.id))
                     row = await cursor.fetchone()
                     saldo = row[0] if row else 0
-
                     if not infinite and saldo < valor_aposta:
                         await db.rollback()
-                        ACTIVE_BLACKJACKS.discard(active_key)
-                        return await interaction.response.send_message(
-                            f"Saldo insuficiente. Sua carteira tem "
-                            f"{saldo:,} {config.CURRENCY_NAME}.",
-                            ephemeral=True,
-                        )
-
+                        ACTIVE_MINES.discard(active_key)
+                        return await interaction.response.send_message(f"Saldo insuficiente. Sua carteira tem {saldo:,} {config.CURRENCY_NAME}.", ephemeral=True)
                     if not infinite:
-                        cursor = await db.execute(
-                            "UPDATE users SET wallet=wallet-? "
-                            "WHERE guild_id=? AND user_id=? AND wallet>=?",
-                            (
-                                valor_aposta,
-                                interaction.guild.id,
-                                interaction.user.id,
-                                valor_aposta,
-                            ),
-                        )
+                        cursor = await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                            (valor_aposta, interaction.guild.id, interaction.user.id, valor_aposta))
                         if cursor.rowcount != 1:
                             await db.rollback()
-                            ACTIVE_BLACKJACKS.discard(active_key)
-                            return await interaction.response.send_message(
-                                "Não consegui reservar sua aposta. "
-                                "Nenhuma moeda foi alterada; confira /saldo.",
-                                ephemeral=True,
-                            )
+                            ACTIVE_MINES.discard(active_key)
+                            return await interaction.response.send_message("Não consegui reservar sua aposta. Nenhuma moeda foi alterada.", ephemeral=True)
                     await db.commit()
         except Exception:
-            ACTIVE_BLACKJACKS.discard(active_key)
+            ACTIVE_MINES.discard(active_key)
             raise
 
-        partida = BlackjackView(
-            owner_id=interaction.user.id,
-            guild_id=interaction.guild.id,
-            modo=modo.value,
-            aposta=valor_aposta,
-        )
+        partida = MinesView(interaction.user.id, interaction.guild.id, modo.value, valor_aposta, minas)
         try:
             await interaction.response.send_message(view=partida)
             partida.message = await interaction.original_response()
         except discord.HTTPException:
-            # Desativa o timeout ANTES de reembolsar para impedir um segundo
-            # reembolso caso a View nunca tenha sido publicada.
             partida.done = True
             partida.stop()
-            if (
-                modo.value == "bet"
-                and valor_aposta > 0
-                and not infinite
-            ):
+            if modo.value == "bet" and valor_aposta > 0 and not infinite:
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute("BEGIN IMMEDIATE")
-                    await db.execute(
-                        "UPDATE users SET wallet=wallet+? "
-                        "WHERE guild_id=? AND user_id=?",
-                        (valor_aposta, interaction.guild.id, interaction.user.id),
-                    )
+                    await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                        (valor_aposta, interaction.guild.id, interaction.user.id))
                     await db.commit()
-                BLACKJACK_LOG.warning(
-                    "settlement=publish_failure_refund guild=%s user=%s bet=%s",
-                    interaction.guild.id, interaction.user.id, valor_aposta
-                )
-            ACTIVE_BLACKJACKS.discard(active_key)
+                BLACKJACK_LOG.warning("mines=publish_failure_refund guild=%s user=%s bet=%s",
+                    interaction.guild.id, interaction.user.id, valor_aposta)
+            ACTIVE_MINES.discard(active_key)
             raise
         except Exception:
-            # Se o envio foi aceito mas a leitura da resposta falhou, não
-            # devolvemos automaticamente: isso poderia duplicar o saldo.
-            if not partida.done:
-                partida.stop()
-                partida.done = True
-            ACTIVE_BLACKJACKS.discard(active_key)
+            partida.done = True
+            partida.stop()
+            ACTIVE_MINES.discard(active_key)
             raise
 
     @app_commands.command(name="caraoucoroa", description="Adivinhe o resultado da moeda")
