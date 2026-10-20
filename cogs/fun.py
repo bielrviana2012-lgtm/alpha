@@ -283,6 +283,9 @@ class MinesView(discord.ui.LayoutView):
                 return
             self.done = True
             if self.modo == "bet" and self.aposta > 0:
+                # Sem nenhuma casa revelada, devolve a reserva. Se já houve
+                # progresso, liquida como saque automático para evitar abuso.
+                retorno = int(self.aposta * self._multiplier()) if self.revealed else self.aposta
                 if has_infinite_coins(self.owner_id):
                     saldo_texto = "∞"
                 else:
@@ -290,13 +293,22 @@ class MinesView(discord.ui.LayoutView):
                     async with aiosqlite.connect(DB_PATH) as db:
                         await db.execute("BEGIN IMMEDIATE")
                         await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
-                            (self.aposta, self.guild_id, self.owner_id))
+                            (retorno, self.guild_id, self.owner_id))
                         cursor = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
                             (self.guild_id, self.owner_id))
                         row = await cursor.fetchone()
                         await db.commit()
                     saldo_texto = f"{row[0]:,}" if row else "0"
-                self.result_text = f"⌛ Expirou. A aposta de {self.aposta:,} foi devolvida. Carteira: {saldo_texto}."
+                if self.revealed:
+                    self.result_text = (
+                        f"⌛ Tempo esgotado; saque automático de {retorno:,} "
+                        f"{config.CURRENCY_NAME}. Carteira: {saldo_texto}."
+                    )
+                else:
+                    self.result_text = (
+                        f"⌛ Expirou sem casas reveladas. A aposta de {self.aposta:,} "
+                        f"{config.CURRENCY_NAME} foi devolvida. Carteira: {saldo_texto}."
+                    )
             else:
                 self.result_text = "⌛ A partida grátis expirou."
             self._build()
@@ -306,8 +318,8 @@ class MinesView(discord.ui.LayoutView):
                 except discord.HTTPException:
                     pass
             self._release_active()
-            BLACKJACK_LOG.info("mines=timeout guild=%s user=%s mode=%s bet=%s",
-                self.guild_id, self.owner_id, self.modo, self.aposta)
+            BLACKJACK_LOG.info("mines=timeout guild=%s user=%s mode=%s bet=%s safe=%s",
+                self.guild_id, self.owner_id, self.modo, self.aposta, len(self.revealed))
 
 
 class QuizView(discord.ui.LayoutView):
