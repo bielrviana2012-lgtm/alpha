@@ -14,6 +14,7 @@ GREEN = discord.Colour.from_rgb(46, 204, 113)
 RED = discord.Colour.from_rgb(231, 76, 60)
 GOLD = discord.Colour.from_rgb(241, 196, 15)
 ACTIVE = set()
+ACTIVE_VIEWS = {}
 
 
 class ArcadeView(discord.ui.LayoutView):
@@ -175,7 +176,10 @@ class ArcadeView(discord.ui.LayoutView):
             return await interaction.response.send_message("Esta partida já terminou.", ephemeral=True)
         self.done = True
         settlement = await self.settle()
-        ACTIVE.discard((self.guild_id, self.owner_id))
+        key = (self.guild_id, self.owner_id)
+        ACTIVE.discard(key)
+        if ACTIVE_VIEWS.get(key) is self:
+            ACTIVE_VIEWS.pop(key, None)
         self._build(message + f"\n\n🏆 **Pontuação final:** {self.points}" + settlement, colour)
         self.stop()
         if interaction.response.is_done():
@@ -272,7 +276,10 @@ class ArcadeView(discord.ui.LayoutView):
             return
         self.done = True
         settlement = await self.settle()
-        ACTIVE.discard((self.guild_id, self.owner_id))
+        key = (self.guild_id, self.owner_id)
+        ACTIVE.discard(key)
+        if ACTIVE_VIEWS.get(key) is self:
+            ACTIVE_VIEWS.pop(key, None)
         self._build("⌛ A partida expirou." + settlement, RED)
         self.stop()
         if self.message:
@@ -290,8 +297,12 @@ class ArcadePremium(commands.Cog):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         key = (interaction.guild_id, interaction.user.id)
-        if key in ACTIVE:
+        previous = ACTIVE_VIEWS.get(key)
+        if previous is not None and not previous.done:
             return await interaction.response.send_message("Você já tem uma partida do Arcade Premium em andamento.", ephemeral=True)
+        if previous is not None:
+            ACTIVE_VIEWS.pop(key, None)
+            ACTIVE.discard(key)
         if mode == "bet":
             if wager is None:
                 return await interaction.response.send_message("Informe o valor da aposta.", ephemeral=True)
@@ -314,8 +325,9 @@ class ArcadePremium(commands.Cog):
                             ephemeral=True,
                         )
                     await db.commit()
-        ACTIVE.add(key)
         view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager)
+        ACTIVE.add(key)
+        ACTIVE_VIEWS[key] = view
         await interaction.response.send_message(view=view)
         view.message = await interaction.original_response()
         if game == "Crash Alpha":
@@ -332,7 +344,10 @@ class ArcadePremium(commands.Cog):
                     if view.multiplier >= view.crash_at:
                         view.done = True
                         settlement = await view.settle(crashed=True)
-                        ACTIVE.discard((view.guild_id, view.owner_id))
+                        key = (view.guild_id, view.owner_id)
+                        ACTIVE.discard(key)
+                        if ACTIVE_VIEWS.get(key) is view:
+                            ACTIVE_VIEWS.pop(key, None)
                         view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada." + settlement, RED)
                         view.stop()
                     else:
