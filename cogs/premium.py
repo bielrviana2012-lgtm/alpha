@@ -210,6 +210,7 @@ class Premium(commands.Cog):
             else:
                 valor = f"{wallet + bank:,} {config.CURRENCY_NAME}"
 
+            nome = discord.utils.escape_mentions(discord.utils.escape_markdown(nome))
             linhas.append(f"{medalha} **{nome}** — {valor}")
 
         painel = make_v2_panel(
@@ -217,7 +218,10 @@ class Premium(commands.Cog):
             "\n".join(linhas),
             footer="Family Alpha • Top 10",
         )
-        await interaction.response.send_message(view=painel)
+        await interaction.response.send_message(
+            view=painel,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 async def setup(bot: commands.Bot):
