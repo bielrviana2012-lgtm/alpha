@@ -36,6 +36,9 @@ class ArcadeView(discord.ui.LayoutView):
         self.crash_at = random.uniform(1.25, 4.5)
         self.message = None
         self.crash_task = None
+        # Registra o clique de saque antes de esperar pelo lock do temporizador.
+        self.cashout_requested_at = None
+        self.crash_at_time = None
         self.created_at = asyncio.get_running_loop().time()
         self._build("Partida iniciada! Escolha sua jogada.")
 
@@ -184,16 +187,30 @@ class ArcadeView(discord.ui.LayoutView):
             ACTIVE_VIEWS.pop(key, None)
         self._build(message + f"\n\n🏆 **Pontuação final:** {self.points}" + settlement, colour)
         self.stop()
-        if interaction.response.is_done():
-            await interaction.edit_original_response(view=self)
-        else:
-            await interaction.response.edit_message(view=self)
+        try:
+            if interaction.response.is_done():
+                await interaction.edit_original_response(view=self)
+            else:
+                await interaction.response.edit_message(view=self)
+        except discord.HTTPException:
+            # A liquidação já foi salva; tenta atualizar a mensagem do jogo diretamente.
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "Não foi possível atualizar a mensagem após finalizar a partida"
+                    )
 
     async def cashout(self, interaction):
         # Reconhece o clique imediatamente: o temporizador do Crash também
         # usa este lock e pode estar terminando uma atualização de mensagem.
         is_crash = self.game == "Crash Alpha"
         if is_crash:
+            # Marca o saque antes do defer e antes de esperar pelo lock. Assim,
+            # o temporizador não declara crash se o clique já chegou primeiro.
+            self.cashout_requested_at = asyncio.get_running_loop().time()
             await interaction.response.defer()
 
         async with self.lock:
@@ -414,8 +431,13 @@ class ArcadePremium(commands.Cog):
                 async with view.lock:
                     if view.done:
                         return
-                    view.multiplier = round(view.multiplier * 1.15, 2)
-                    if view.multiplier >= view.crash_at:
+                    # Se o jogador clicou em sacar antes deste tick, deixa o
+                    # callback concluir o saque em vez de resolver como perda.
+                    if view.cashout_requested_at is not None:
+                        return
+                    next_multiplier = round(view.multiplier * 1.15, 2)
+                    if next_multiplier >= view.crash_at:
+                        view.crash_at_time = asyncio.get_running_loop().time()
                         view.done = True
                         settlement = await view.settle(crashed=True)
                         key = (view.guild_id, view.owner_id)
@@ -425,6 +447,7 @@ class ArcadePremium(commands.Cog):
                         view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada." + settlement, RED)
                         view.stop()
                     else:
+                        view.multiplier = next_multiplier
                         view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
                     if view.message:
                         await view.message.edit(view=view)
