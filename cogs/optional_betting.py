@@ -97,7 +97,7 @@ class OptionalBetting(commands.Cog):
         if wager is None or wager < MIN_BET or wager > MAX_BET:
             return await interaction.response.send_message(
                 f"Informe explicitamente uma aposta entre {MIN_BET:,} e {MAX_BET:,} "
-                f"{config.CURRENCY_NAME}. O Sr.Alpha nunca apostará sua carteira inteira automaticamente.",
+                f"{config.CURRENCY_NAME}. O Rei Dado nunca apostará sua carteira inteira automaticamente.",
                 ephemeral=True,
             )
         await ensure_user(guild_id, user_id)
