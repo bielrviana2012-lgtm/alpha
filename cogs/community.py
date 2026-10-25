@@ -252,16 +252,16 @@ class SuggestionView(discord.ui.LayoutView):
                                 pass
                     return parts
 
-                message_text = "\\n".join(
+                message_text = "\n".join(
                     part for component in (interaction.message.components or [])
                     for part in collect_text(component)
                 )
-                title_match = re.search(r"Sugestão\\s*#(\\d+)", message_text, re.IGNORECASE)
-                author_match = re.search(r"<@!?(\\d+)>", message_text)
+                title_match = re.search(r"Sugestão\s*#(\d+)", message_text, re.IGNORECASE)
+                author_match = re.search(r"<@!?(\d+)>", message_text)
                 if title_match:
                     recovered_sid = int(title_match.group(1))
                     body_match = re.search(
-                        r"Sugestão\\s*#\\d+[^\\n]*\\n(.*?)(?=\\n.*Sugerida por)",
+                        r"Sugestão\s*#\d+[^\n]*\n(.*?)(?=\n.*Sugerida por)",
                         message_text, re.IGNORECASE | re.DOTALL,
                     )
                     recovered_text = body_match.group(1).strip() if body_match else "Sugestão recuperada da mensagem original."
