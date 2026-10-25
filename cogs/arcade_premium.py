@@ -35,6 +35,7 @@ class ArcadeView(discord.ui.LayoutView):
         self.total = random.randint(12, 18)
         self.crash_at = random.uniform(1.25, 4.5)
         self.message = None
+        self.created_at = asyncio.get_running_loop().time()
         self._build("Partida iniciada! Escolha sua jogada.")
 
     def card_name(self, value):
@@ -323,13 +324,23 @@ class ArcadePremium(commands.Cog):
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         key = (interaction.guild_id, interaction.user.id)
         previous = ACTIVE_VIEWS.get(key)
-        if previous is not None and not previous.done and not previous.is_finished():
+        # Evita que uma view presa bloqueie novas partidas após o timeout.
+        previous_age = (
+            asyncio.get_running_loop().time() - getattr(previous, "created_at", 0)
+            if previous is not None else 0
+        )
+        previous_stale = (
+            previous is not None
+            and (previous.done or previous.is_finished() or previous_age > 95)
+        )
+        if previous is not None and not previous_stale:
             return await interaction.response.send_message(
                 "Você já tem uma partida do Arcade Premium em andamento.",
                 ephemeral=True,
             )
-        # Limpa registros antigos caso a view já tenha terminado ou expirado.
         if previous is not None:
+            previous.done = True
+            previous.stop()
             ACTIVE_VIEWS.pop(key, None)
             ACTIVE.discard(key)
         if mode == "bet":
@@ -383,8 +394,27 @@ class ArcadePremium(commands.Cog):
                         view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
                     if view.message:
                         await view.message.edit(view=view)
-        except (discord.HTTPException, asyncio.CancelledError):
-            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Falha de atualização não deve deixar uma partida fantasma registrada.
+            import logging
+            logging.getLogger(__name__).exception("Falha no temporizador do Crash Alpha")
+            async with view.lock:
+                if not view.done:
+                    view.done = True
+                    settlement = await view.settle(crashed=True)
+                    key = (view.guild_id, view.owner_id)
+                    ACTIVE.discard(key)
+                    if ACTIVE_VIEWS.get(key) is view:
+                        ACTIVE_VIEWS.pop(key, None)
+                    view._build("⚠️ A rodada foi encerrada porque não foi possível atualizar a partida." + settlement, RED)
+                    view.stop()
+                    if view.message:
+                        try:
+                            await view.message.edit(view=view)
+                        except discord.HTTPException:
+                            pass
 
     @app_commands.command(name="crash", description="Jogue Crash Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
