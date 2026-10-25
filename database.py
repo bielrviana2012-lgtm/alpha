@@ -1,4 +1,4 @@
-"""Camada SQLite assíncrona do Alpha BOT."""
+"""Camada SQLite assíncrona do Rei Dado."""
 import os
 import aiosqlite
 from pathlib import Path
