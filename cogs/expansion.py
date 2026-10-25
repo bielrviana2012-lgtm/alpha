@@ -72,17 +72,6 @@ class AlphaExpansion(commands.Cog):
             await db.commit()
         await interaction.response.send_message(f"Enquete publicada: {msg.jump_url}", ephemeral=True)
 
-    @app_commands.command(name="sorteio", description="Crie um sorteio com participação por botão")
-    @app_commands.default_permissions(manage_guild=True)
-    async def sorteio(self, interaction: discord.Interaction, premio: str, duracao_minutos: app_commands.Range[int,1,10080]):
-        ends=(datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).isoformat()
-        await interaction.response.defer(ephemeral=True)
-        msg=await interaction.channel.send(f"## 🎉 SORTEIO: {discord.utils.escape_markdown(premio)}\\nOrganizador: {interaction.user.mention}\\nTermina <t:{int((datetime.now(timezone.utc)+timedelta(minutes=duracao_minutos)).timestamp())}:R>\\nClique em Participar para entrar!", view=ExpansionGiveawayView())
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("INSERT INTO alpha_giveaways(message_id,guild_id,host_id,prize,ends_at) VALUES(?,?,?,?,?)",(msg.id,interaction.guild_id,interaction.user.id,premio,ends))
-            await db.commit()
-        await interaction.followup.send(f"Sorteio publicado: {msg.jump_url}",ephemeral=True)
-
     @app_commands.command(name="missao", description="Complete sua missão diária e ganhe Alpha Coins")
     async def missao(self, interaction: discord.Interaction):
         today=date.today().isoformat()
