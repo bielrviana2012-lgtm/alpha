@@ -93,7 +93,7 @@ class AlphaExpansion(commands.Cog):
             await db.commit()
         await interaction.response.send_message(f"## 🎯 Missão diária: {title}\n{description}\n\n🎁 Recompensa: **{reward} {config.CURRENCY_NAME}**\n-# Recompensa diária já creditada na sua carteira.")
 
-    @app_commands.command(name="perfil", description="Mostra seu perfil da Family Alpha")
+    @app_commands.command(name="perfil_alpha", description="Mostra seu perfil expandido da Family Alpha")
     async def perfil(self, interaction: discord.Interaction, membro: discord.Member | None = None):
         target=membro or interaction.user
         async with aiosqlite.connect(DB_PATH) as db:
