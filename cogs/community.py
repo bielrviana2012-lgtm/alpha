@@ -234,10 +234,65 @@ class SuggestionView(discord.ui.LayoutView):
                     row = (recovered_id, self.suggestion_text, self.suggestion_author_id,
                            self.suggestion_status, self.suggestion_admin_id, self.suggestion_response)
             if not row:
-                return await interaction.response.send_message(
-                    "Não consegui recuperar esta sugestão. Publique uma nova sugestão e tente novamente.",
-                    ephemeral=True,
+                # Recuperação de mensagens antigas quando o registro foi perdido ou
+                # o message_id não corresponde mais ao banco atual. O ID e o texto
+                # podem ser reconstruídos a partir dos componentes da própria mensagem.
+                def collect_text(component):
+                    parts = []
+                    value = getattr(component, "content", None)
+                    if isinstance(value, str):
+                        parts.append(value)
+                    for attr in ("children", "components", "items"):
+                        children = getattr(component, attr, None)
+                        if children:
+                            try:
+                                for child in children:
+                                    parts.extend(collect_text(child))
+                            except TypeError:
+                                pass
+                    return parts
+
+                message_text = "\\n".join(
+                    part for component in (interaction.message.components or [])
+                    for part in collect_text(component)
                 )
+                title_match = re.search(r"Sugestão\\s*#(\\d+)", message_text, re.IGNORECASE)
+                author_match = re.search(r"<@!?(\\d+)>", message_text)
+                if title_match:
+                    recovered_sid = int(title_match.group(1))
+                    body_match = re.search(
+                        r"Sugestão\\s*#\\d+[^\\n]*\\n(.*?)(?=\\n.*Sugerida por)",
+                        message_text, re.IGNORECASE | re.DOTALL,
+                    )
+                    recovered_text = body_match.group(1).strip() if body_match else "Sugestão recuperada da mensagem original."
+                    recovered_author = int(author_match.group(1)) if author_match else self.suggestion_author_id or interaction.user.id
+                    status_match = re.search(r"(Em análise|Aprovada|Recusada|Pendente)", message_text)
+                    recovered_status = status_match.group(1) if status_match else "Em análise"
+                    async with aiosqlite.connect(DB_PATH) as recovery_db:
+                        existing = await recovery_db.execute(
+                            "SELECT id FROM suggestions WHERE id=?", (recovered_sid,)
+                        )
+                        existing_row = await existing.fetchone()
+                        if existing_row:
+                            insert = await recovery_db.execute(
+                                "INSERT INTO suggestions(guild_id,user_id,text,message_id,channel_id,status) VALUES(?,?,?,?,?,?)",
+                                (interaction.guild_id, recovered_author, recovered_text,
+                                 interaction.message.id, interaction.channel_id, recovered_status),
+                            )
+                            recovered_sid = insert.lastrowid
+                        else:
+                            await recovery_db.execute(
+                                "INSERT INTO suggestions(id,guild_id,user_id,text,message_id,channel_id,status) VALUES(?,?,?,?,?,?,?)",
+                                (recovered_sid, interaction.guild_id, recovered_author, recovered_text,
+                                 interaction.message.id, interaction.channel_id, recovered_status),
+                            )
+                        await recovery_db.commit()
+                    row = (recovered_sid, recovered_text, recovered_author, recovered_status, None, "")
+                else:
+                    return await interaction.response.send_message(
+                        "Não consegui recuperar esta sugestão. Publique uma nova sugestão e tente novamente.",
+                        ephemeral=True,
+                    )
             sid, texto, autor_id, status, admin_id, response = row
             cur = await db.execute(
                 "SELECT vote FROM suggestion_votes WHERE suggestion_id=? AND user_id=?",
