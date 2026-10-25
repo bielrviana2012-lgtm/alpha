@@ -175,7 +175,7 @@ class Updates(commands.Cog):
         try:
             mensagem = await canal.send(view=view)
         except discord.Forbidden:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Não tenho permissão para enviar mensagens nesse canal.", ephemeral=True
             )
 
