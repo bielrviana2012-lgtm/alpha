@@ -368,8 +368,17 @@ class ArcadePremium(commands.Cog):
         view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager)
         ACTIVE.add(key)
         ACTIVE_VIEWS[key] = view
-        await interaction.response.send_message(view=view)
-        view.message = await interaction.original_response()
+        try:
+            await interaction.response.send_message(view=view)
+            view.message = await interaction.original_response()
+        except Exception:
+            # Não deixe o jogador bloqueado se o envio inicial falhar.
+            view.done = True
+            view.stop()
+            ACTIVE.discard(key)
+            if ACTIVE_VIEWS.get(key) is view:
+                ACTIVE_VIEWS.pop(key, None)
+            raise
         if game == "Crash Alpha":
             asyncio.create_task(self.crash_timer(view))
 
@@ -397,24 +406,26 @@ class ArcadePremium(commands.Cog):
         except asyncio.CancelledError:
             raise
         except Exception:
-            # Falha de atualização não deve deixar uma partida fantasma registrada.
             import logging
             logging.getLogger(__name__).exception("Falha no temporizador do Crash Alpha")
-            async with view.lock:
-                if not view.done:
-                    view.done = True
-                    settlement = await view.settle(crashed=True)
-                    key = (view.guild_id, view.owner_id)
-                    ACTIVE.discard(key)
-                    if ACTIVE_VIEWS.get(key) is view:
-                        ACTIVE_VIEWS.pop(key, None)
-                    view._build("⚠️ A rodada foi encerrada porque não foi possível atualizar a partida." + settlement, RED)
-                    view.stop()
-                    if view.message:
-                        try:
-                            await view.message.edit(view=view)
-                        except discord.HTTPException:
-                            pass
+            # Limpa o registro primeiro, mesmo se a liquidação ou a edição falhar.
+            key = (view.guild_id, view.owner_id)
+            view.done = True
+            ACTIVE.discard(key)
+            if ACTIVE_VIEWS.get(key) is view:
+                ACTIVE_VIEWS.pop(key, None)
+            view.stop()
+            settlement = ""
+            try:
+                settlement = await view.settle(crashed=True)
+            except Exception:
+                logging.getLogger(__name__).exception("Falha ao encerrar a rodada do Crash Alpha")
+            view._build("⚠️ A rodada foi encerrada por uma falha técnica." + settlement, RED)
+            if view.message:
+                try:
+                    await view.message.edit(view=view)
+                except discord.HTTPException:
+                    pass
 
     @app_commands.command(name="crash", description="Jogue Crash Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
