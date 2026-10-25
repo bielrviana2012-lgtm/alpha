@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from database import DB_PATH
 
-log = logging.getLogger("Sr.Alpha.PingRoles")
+log = logging.getLogger("Rei Dado.PingRoles")
 
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 TARGET_GUILD_ID = 1536903015678873710
@@ -310,13 +310,13 @@ class PingSelectView(discord.ui.View):
                 if wants_role:
                     await member.add_roles(
                         role,
-                        reason="Seleção de ping pelo painel Sr.Alpha",
+                        reason="Seleção de ping pelo painel Rei Dado",
                     )
                     added += 1
                 else:
                     await member.remove_roles(
                         role,
-                        reason="Remoção de ping pelo painel Sr.Alpha",
+                        reason="Remoção de ping pelo painel Rei Dado",
                     )
                     removed += 1
             except (discord.Forbidden, discord.HTTPException):
@@ -420,7 +420,7 @@ class PingPanelView(discord.ui.LayoutView):
             "Use os botões para navegar entre as páginas."
         ))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
         self.add_item(panel)
 
         row = discord.ui.ActionRow()
@@ -625,7 +625,7 @@ class PingRoles(commands.Cog):
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(f"**Lista {field_number}**\n{chunk}"))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay(f"-# Sr.Alpha • Total: {len(pings)} cargos"))
+        panel.add_item(discord.ui.TextDisplay(f"-# Rei Dado • Total: {len(pings)} cargos"))
         layout.add_item(panel)
         await interaction.response.send_message(view=layout, ephemeral=True)
 
@@ -733,4 +733,4 @@ async def setup(bot: commands.Bot):
         except discord.HTTPException:
             log.exception("Não consegui atualizar o painel de pings %s.", message_id)
 
-    log.info("Sistema de pings do Sr.Alpha carregado com Components V2.")
+    log.info("Sistema de pings do Rei Dado carregado com Components V2.")
