@@ -8,7 +8,7 @@ from discord.ext import commands
 import config
 from database import DB_PATH
 
-log = logging.getLogger("Sr.Alpha.Community")
+log = logging.getLogger("Rei Dado.Community")
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ class SuggestionView(discord.ui.LayoutView):
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(f"**💬 Resposta da equipe**\n{response[:1000]}"))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Sistema de sugestões"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Sistema de sugestões"))
         self.add_item(panel)
         row = discord.ui.ActionRow()
         yes_button = discord.ui.Button(label="Apoiar", emoji="👍", style=discord.ButtonStyle.success, custom_id="alpha_suggest_yes")
@@ -356,7 +356,7 @@ def ticket_panel_container(settings: dict, categories: list[dict]) -> discord.ui
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(f"[🖼️ Abrir imagem do painel]({settings['panel_image']})"))
     container.add_item(discord.ui.Separator())
-    container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Atendimento"))
+    container.add_item(discord.ui.TextDisplay("-# Rei Dado • Central de Atendimento"))
     return container
 
 
@@ -417,7 +417,7 @@ class TicketControlView(discord.ui.LayoutView):
         panel.add_item(discord.ui.TextDisplay(f"# {titulo}"))
         panel.add_item(discord.ui.TextDisplay(descricao))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Atendimento"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Central de Atendimento"))
         self.add_item(panel)
         row = discord.ui.ActionRow()
         claim_button = discord.ui.Button(label="Assumir atendimento", emoji="🧑‍💼",
@@ -597,7 +597,7 @@ class RatingCommentModal(discord.ui.Modal, title="Comentário da avaliação"):
             ))
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(
-                f"-# Sr.Alpha • Atendimento {self.channel_id}"
+                f"-# Rei Dado • Atendimento {self.channel_id}"
             ))
             layout.add_item(panel)
 
@@ -1027,7 +1027,7 @@ class Community(commands.Cog):
 
     # ----------------- Bug reports -----------------
 
-    @app_commands.command(name="relatar_bug", description="Relate um erro ou problema encontrado no Sr.Alpha")
+    @app_commands.command(name="relatar_bug", description="Relate um erro ou problema encontrado no Rei Dado")
     @app_commands.guild_only()
     async def relatar_bug(
         self,
@@ -1107,7 +1107,7 @@ class Community(commands.Cog):
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(f"**Imagem / captura do bug:** [Abrir imagem]({imagem_url})"))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Central de Relatos"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Central de Relatos"))
         layout.add_item(panel)
 
         try:
@@ -1123,7 +1123,7 @@ class Community(commands.Cog):
             )
 
         await interaction.followup.send(
-            f"✅ Seu relato foi enviado para a equipe em {channel.mention}. Obrigado por ajudar a melhorar o Sr.Alpha!",
+            f"✅ Seu relato foi enviado para a equipe em {channel.mention}. Obrigado por ajudar a melhorar o Rei Dado!",
             ephemeral=True,
         )
 
@@ -1257,7 +1257,7 @@ class Community(commands.Cog):
                 ))
                 panel.add_item(discord.ui.Separator())
                 panel.add_item(discord.ui.TextDisplay(f"[🖼️ Avatar do membro]({member.display_avatar.url})"))
-                panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+                panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
                 layout.add_item(panel)
                 try:
                     await channel.send(view=layout)
