@@ -53,6 +53,10 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="saldo", description="Veja sua carteira e seu banco")
     async def saldo(self, interaction: discord.Interaction, membro: discord.Member | None = None):
+        # Confirma a interação imediatamente para evitar o erro 10062 (Unknown interaction)
+        # enquanto o banco de dados e o painel são preparados.
+        await interaction.response.defer(thinking=True)
+
         target = membro or interaction.user
         row = await get_user(interaction.guild_id, target.id)
         panel = make_v2_panel(
@@ -64,7 +68,7 @@ class Economy(commands.Cog):
                 ("💎 Patrimônio total", f"{format_coins(target.id, row['wallet']+row['bank'])} {config.CURRENCY_NAME}"),
             ],
         )
-        await interaction.response.send_message(view=panel)
+        await interaction.followup.send(view=panel)
 
     @app_commands.command(name="setmoney", description="Define o saldo de um membro")
     @app_commands.describe(membro="Membro que receberá as moedas", valor="Novo saldo")
