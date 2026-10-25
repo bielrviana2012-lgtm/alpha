@@ -48,7 +48,7 @@ class ArcadeView(discord.ui.LayoutView):
     def _build(self, extra="", colour=PURPLE):
         self.clear_items()
         box = discord.ui.Container(accent_colour=colour)
-        box.add_item(discord.ui.TextDisplay(f"# ✦ SR.ALPHA • {self.game}"))
+        box.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {self.game}"))
         box.add_item(discord.ui.Separator())
         text = f"**Jogador:** <@{self.owner_id}>\n**Pontuação da rodada:** {self.points}"
         if self.game in ("Crash Alpha", "Torre Alpha", "Caça ao Dragão"):
