@@ -1036,7 +1036,37 @@ class Community(commands.Cog):
         passos: str = "",
         imagem_url: str = "",
     ):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # Diagnóstico: este comando vinha recebendo interações expiradas ou já reconhecidas.
+        log.warning(
+            "Iniciando /relatar_bug: interaction_id=%s created_at=%s received_at=%s "
+            "expired=%s response_done=%s bot_id=%s",
+            interaction.id,
+            interaction.created_at.isoformat(),
+            discord.utils.utcnow().isoformat(),
+            interaction.is_expired(),
+            interaction.response.is_done(),
+            getattr(interaction.client.user, "id", None),
+        )
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except discord.NotFound:
+            log.exception(
+                "Discord rejeitou o defer de /relatar_bug como interação desconhecida: "
+                "interaction_id=%s created_at=%s",
+                interaction.id,
+                interaction.created_at.isoformat(),
+            )
+            return
+        except discord.HTTPException as exc:
+            if exc.code == 40060:
+                log.warning(
+                    "Interação de /relatar_bug já foi reconhecida antes do defer: "
+                    "interaction_id=%s created_at=%s",
+                    interaction.id,
+                    interaction.created_at.isoformat(),
+                )
+                return
+            raise
 
         imagem_url = imagem_url.strip()
         if imagem_url and not (
