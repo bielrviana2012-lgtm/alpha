@@ -8,9 +8,10 @@ COR = discord.Color.from_rgb(145, 103, 255)
 
 
 class SorteioView(discord.ui.LayoutView):
-    def __init__(self, duracao_min: int, vencedores: int, titulo: str, descricao: str):
+    def __init__(self, duracao_min: int, vencedores: int, titulo: str, descricao: str, criador_id: int):
         super().__init__(timeout=duracao_min * 60)
         self.participantes = set()
+        self.criador_id = criador_id
         self.quantidade_vencedores = vencedores
         self.titulo = titulo
         self.descricao = descricao
@@ -77,9 +78,9 @@ class SorteioView(discord.ui.LayoutView):
             except discord.HTTPException:
                 pass
 
-    async def on_timeout(self):
+    async def encerrar(self):
         if self.encerrado:
-            return
+            return False
         self.encerrado = True
         participantes = list(self.participantes)
         self.ganhadores = random.sample(
@@ -96,12 +97,17 @@ class SorteioView(discord.ui.LayoutView):
                     )
             except discord.HTTPException:
                 pass
+        self.stop()
+        return True
+
+    async def on_timeout(self):
+        await self.encerrar()
 
 
 class Updates(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.sorteios_ativos = set()
+        self.sorteios_ativos = {}
 
     @app_commands.command(
         name="anunciar_atualizacao",
@@ -164,7 +170,8 @@ class Updates(commands.Cog):
                 "Já existem 10 sorteios ativos neste processo.", ephemeral=True
             )
 
-        view = SorteioView(duracao_min, vencedores, titulo, descricao)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        view = SorteioView(duracao_min, vencedores, titulo, descricao, interaction.user.id)
         try:
             mensagem = await canal.send(view=view)
         except discord.Forbidden:
@@ -173,17 +180,48 @@ class Updates(commands.Cog):
             )
 
         view.message = mensagem
-        self.sorteios_ativos.add(mensagem.id)
+        self.sorteios_ativos[mensagem.id] = view
 
         async def acompanhar_sorteio():
             try:
                 await view.wait()
             finally:
-                self.sorteios_ativos.discard(mensagem.id)
+                self.sorteios_ativos.pop(mensagem.id, None)
 
         self.bot.loop.create_task(acompanhar_sorteio())
+        await interaction.followup.send(
+            f"🎉 Sorteio criado com sucesso em {canal.mention}!\nID da mensagem: `{mensagem.id}`", ephemeral=True
+        )
+
+
+    @app_commands.command(
+        name="encerrar_sorteio",
+        description="Encerra um sorteio que você criou.",
+    )
+    @app_commands.guild_only()
+    @app_commands.describe(mensagem_id="ID da mensagem do sorteio que deseja encerrar")
+    async def encerrar_sorteio(self, interaction: discord.Interaction, mensagem_id: str):
+        if not mensagem_id.isdigit():
+            return await interaction.response.send_message(
+                "Informe o ID numérico da mensagem do sorteio.", ephemeral=True
+            )
+        view = self.sorteios_ativos.get(int(mensagem_id))
+        if view is None:
+            return await interaction.response.send_message(
+                "Não encontrei esse sorteio ativo. Ele pode já ter terminado ou o bot pode ter reiniciado.",
+                ephemeral=True,
+            )
+        if interaction.user.id != view.criador_id:
+            return await interaction.response.send_message(
+                "⛔ Somente quem criou este sorteio pode encerrá-lo.", ephemeral=True
+            )
+        if not await view.encerrar():
+            return await interaction.response.send_message(
+                "Este sorteio já foi encerrado.", ephemeral=True
+            )
+        self.sorteios_ativos.pop(int(mensagem_id), None)
         await interaction.response.send_message(
-            f"🎉 Sorteio criado com sucesso em {canal.mention}!", ephemeral=True
+            "✅ Sorteio encerrado e resultado publicado.", ephemeral=True
         )
 
 
