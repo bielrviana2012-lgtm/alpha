@@ -1,4 +1,4 @@
-"""Utilitários visuais do Sr.Alpha usando Discord Components V2."""
+"""Utilitários visuais do Rei Dado usando Discord Components V2."""
 
 import discord
 
@@ -10,7 +10,7 @@ def make_v2_panel(
     description: str = "",
     *,
     sections: list[tuple[str, str]] | None = None,
-    footer: str = "Sr.Alpha • Family Alpha",
+    footer: str = "Rei Dado • Family Alpha",
     accent_color: discord.Color = PURPLE,
 ) -> discord.ui.LayoutView:
     """Monta um painel Components V2 sem usar discord.Embed."""
