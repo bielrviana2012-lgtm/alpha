@@ -233,26 +233,6 @@ class Economy(commands.Cog):
             await db.commit()
         await interaction.response.send_message(f"💸 {interaction.user.mention} enviou **{valor:,} {config.CURRENCY_NAME}** para {membro.mention}.")
 
-    @app_commands.command(name="ranking", description="Veja os membros mais ricos do servidor")
-    async def ranking(self, interaction: discord.Interaction):
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute("SELECT user_id, wallet+bank AS total FROM users WHERE guild_id=? ORDER BY total DESC LIMIT 10", (interaction.guild_id,)); rows = await cur.fetchall()
-        if not rows: return await interaction.response.send_message("Ainda não há dados de economia.", ephemeral=True)
-        lines = []
-        for i, (uid, total) in enumerate(rows, 1):
-            member = interaction.guild.get_member(uid) if interaction.guild else None
-            name = member.display_name if member else f"Membro {uid}"
-            name = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
-            lines.append(f"**{i}.** {name} — {format_coins(uid, total)} {config.CURRENCY_NAME}")
-        await interaction.response.send_message(
-            view=make_v2_panel(
-                "🏆 Ranking Alpha",
-                "\n".join(lines),
-                footer="Sr.Alpha • Ranking dos 10 membros mais ricos",
-            ),
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
     @app_commands.command(name="produto_criar", description="Adiciona um produto personalizado à loja")
     @app_commands.describe(nome="Nome do produto", preco="Preço em Alpha Coins")
     async def produto_criar(
