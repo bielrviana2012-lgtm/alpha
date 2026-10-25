@@ -109,7 +109,7 @@ class AlphaExpansion(commands.Cog):
         pettext=f"{pet[1]} {pet[0]} (nível {pet[2]})" if pet else "Nenhum — use /pet_adotar"
         await interaction.response.send_message(f"## {badge} Perfil de {target.display_name}\n**Título:** {title} · **Moldura:** {frame}\n**Nível:** {level} · **XP:** {xp}\n**Alpha Coins:** {'∞' if has_infinite_coins(target.id) else format(wallet, ',')}\n**Reputação:** {rep[0]} · **Conquistas:** {ach[0]}\n**Pet:** {pettext}")
 
-    @app_commands.command(name="conquistas", description="Veja suas conquistas")
+    @app_commands.command(name="conquistas_alpha", description="Veja suas conquistas da expansão")
     async def conquistas(self, interaction: discord.Interaction, membro: discord.Member | None = None):
         target=membro or interaction.user
         async with aiosqlite.connect(DB_PATH) as db:
