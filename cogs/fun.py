@@ -24,7 +24,7 @@ MODOS = [
 
 # Uma única partida de Mines ativa por jogador neste processo.
 ACTIVE_MINES = set()
-BLACKJACK_LOG = logging.getLogger("Sr.Alpha.games")
+BLACKJACK_LOG = logging.getLogger("Rei Dado.games")
 
 
 def embed_jogo(titulo, descricao, cor=COR):
@@ -437,7 +437,7 @@ class Fun(commands.Cog):
 
     @app_commands.command(
         name="ppt",
-        description="Pedra, papel e tesoura com o Sr.Alpha",
+        description="Pedra, papel e tesoura com o Rei Dado",
     )
     @app_commands.choices(
         escolha=[
@@ -472,12 +472,12 @@ class Fun(commands.Cog):
         else:
             premio = 0
             empate = False
-            resultado = "💨 O Sr.Alpha venceu!"
+            resultado = "💨 O Rei Dado venceu!"
 
         await finalizar_jogo(
             interaction, modo.value, aposta, "✊ Pedra, papel e tesoura",
             f"Você: **{jogador.title()}**\n"
-            f"Sr.Alpha: **{bot.title()}**\n{resultado}",
+            f"Rei Dado: **{bot.title()}**\n{resultado}",
             premio, empate,
         )
 
@@ -588,7 +588,7 @@ class Fun(commands.Cog):
             premio,
         )
 
-    @app_commands.command(name="dados", description="Desafie o Sr.Alpha nos dados")
+    @app_commands.command(name="dados", description="Desafie o Rei Dado nos dados")
     @app_commands.choices(modo=MODOS)
     async def dados(
         self,
@@ -605,8 +605,8 @@ class Fun(commands.Cog):
 
         await finalizar_jogo(
             interaction, modo.value, aposta, "🎲 Duelo de dados",
-            f"Você: **{seu}**\nSr.Alpha: **{alpha}**\n"
-            f"{'🏆 Você venceu!' if venceu else '🤝 Empate!' if empate else '💨 Sr.Alpha venceu!'}",
+            f"Você: **{seu}**\nRei Dado: **{alpha}**\n"
+            f"{'🏆 Você venceu!' if venceu else '🤝 Empate!' if empate else '💨 Rei Dado venceu!'}",
             premio, empate,
         )
 
@@ -748,7 +748,7 @@ class Fun(commands.Cog):
 
         if api_key:
             instrucoes = (
-                "Você é a Bola Mágica inteligente do bot Discord Sr.Alpha. "
+                "Você é a Bola Mágica inteligente do bot Discord Rei Dado. "
                 "Responda sempre em português brasileiro, de forma direta e útil. "
                 "Não sorteie respostas genéricas e nunca diga apenas 'pergunte novamente mais tarde'. "
                 "Para perguntas de sim/não, dê SIM ou NÃO logo no começo e explique brevemente os motivos. "
@@ -795,14 +795,14 @@ class Fun(commands.Cog):
                         else:
                             # Registra a causa no log do Railway sem revelar a chave.
                             import logging
-                            logging.getLogger("Sr.Alpha").error(
+                            logging.getLogger("Rei Dado").error(
                                 "Gemini API retornou HTTP %s: %s",
                                 response.status,
                                 str(data)[:700],
                             )
             except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
                 import logging
-                logging.getLogger("Sr.Alpha").exception("Falha ao consultar a Gemini: %s", exc)
+                logging.getLogger("Rei Dado").exception("Falha ao consultar a Gemini: %s", exc)
 
         if not resposta:
             resposta = (
@@ -814,7 +814,7 @@ class Fun(commands.Cog):
 
         painel = embed_jogo(
             "🔮 Bola mágica • Análise",
-            f"**Pergunta:** {pergunta[:1000]}\n\n**Análise do Sr.Alpha:** {resposta[:3500]}",
+            f"**Pergunta:** {pergunta[:1000]}\n\n**Análise do Rei Dado:** {resposta[:3500]}",
         )
         await interaction.followup.send(view=painel)
 
@@ -835,7 +835,7 @@ class Fun(commands.Cog):
 
         await finalizar_jogo(
             interaction, modo.value, aposta, "⚔️ Duelo Alpha",
-            f"Seu poder: **{seu}**\nPoder do Sr.Alpha: **{alpha}**\n"
+            f"Seu poder: **{seu}**\nPoder do Rei Dado: **{alpha}**\n"
             f"{'🏆 Vitória!' if venceu else '🤝 Empate!' if empate else '💨 Derrota!'}",
             premio, empate,
         )
