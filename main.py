@@ -414,6 +414,13 @@ async def on_app_command_error(
                 ephemeral=True,
             )
 
+    except discord.NotFound as send_error:
+        # Interações expiradas (10062) não aceitam novas respostas.
+        logger.warning(
+            "A interação do comando %s expirou antes de a resposta de erro ser enviada (código %s).",
+            interaction.command.name if interaction.command else "desconhecido",
+            getattr(send_error, "code", "desconhecido"),
+        )
     except discord.HTTPException:
         logger.exception(
             "Não foi possível enviar a mensagem de erro."
