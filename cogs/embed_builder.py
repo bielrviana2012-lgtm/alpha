@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-log = logging.getLogger("Sr.Alpha.EmbedBuilder")
+log = logging.getLogger("Rei Dado.EmbedBuilder")
 
 PURPLE = discord.Color.from_rgb(145, 103, 255)
 MAX_FIELDS = 10
@@ -248,7 +248,7 @@ class EmbedBuilder(commands.Cog):
 
         container.add_item(discord.ui.Separator())
         container.add_item(
-            discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha")
+            discord.ui.TextDisplay("-# Rei Dado • Family Alpha")
         )
 
         layout.add_item(container)
