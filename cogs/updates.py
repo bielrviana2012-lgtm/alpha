@@ -39,11 +39,11 @@ class SorteioView(discord.ui.LayoutView):
             )
             container.add_item(discord.ui.Separator())
             container.add_item(discord.ui.TextDisplay(result))
-            container.add_item(discord.ui.TextDisplay("-# Sorteio encerrado • Sr.Alpha"))
+            container.add_item(discord.ui.TextDisplay("-# Sorteio encerrado • Rei Dado"))
         else:
             container.add_item(discord.ui.Separator())
             container.add_item(discord.ui.TextDisplay("Clique no botão abaixo para participar ou cancelar sua participação."))
-            container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+            container.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
 
         self.add_item(container)
         if not self.encerrado:
@@ -111,7 +111,7 @@ class Updates(commands.Cog):
 
     @app_commands.command(
         name="anunciar_atualizacao",
-        description="Publica um anúncio de atualização do Sr.Alpha.",
+        description="Publica um anúncio de atualização do Rei Dado.",
     )
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
@@ -132,7 +132,7 @@ class Updates(commands.Cog):
         panel.add_item(discord.ui.Separator())
         panel.add_item(discord.ui.TextDisplay(f"**📦 Versão**\n{versao[:100]}"))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Atualizações • Family Alpha"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Atualizações • Family Alpha"))
         layout.add_item(panel)
 
         try:
