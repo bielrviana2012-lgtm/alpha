@@ -9,7 +9,7 @@ from database import DB_PATH, get_user, ensure_user, has_infinite_coins, format_
 import config
 from cogs.ui_v2 import make_v2_panel
 
-logger = logging.getLogger("Sr.Alpha.Economy")
+logger = logging.getLogger("Rei Dado.Economy")
 
 DEFAULT_SHOP = {"Caixa Misteriosa": 250, "Amuleto Alpha": 500, "Título VIP (cosmético)": 1000}
 
