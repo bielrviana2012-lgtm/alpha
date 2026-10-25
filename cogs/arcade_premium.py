@@ -1,4 +1,4 @@
-"""Arcade Premium do Sr.Alpha com modo grátis e apostas de moedas virtuais."""
+"""Arcade Premium do Rei Dado com modo grátis e apostas de moedas virtuais."""
 import asyncio
 import random
 import discord
