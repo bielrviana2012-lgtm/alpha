@@ -30,7 +30,7 @@ BLACKJACK_LOG = logging.getLogger("Rei Dado.games")
 def embed_jogo(titulo, descricao, cor=COR):
     layout = discord.ui.LayoutView(timeout=None)
     panel = discord.ui.Container(accent_colour=cor)
-    panel.add_item(discord.ui.TextDisplay(f"# ✦ SR.ALPHA • {titulo}"))
+    panel.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {titulo}"))
     panel.add_item(discord.ui.Separator())
     panel.add_item(discord.ui.TextDisplay(descricao[:4000]))
     panel.add_item(discord.ui.Separator())
@@ -176,7 +176,7 @@ class MinesView(discord.ui.LayoutView):
     def _build(self):
         self.clear_items()
         panel = discord.ui.Container(accent_colour=COR)
-        panel.add_item(discord.ui.TextDisplay("# 💣 SR.ALPHA • Mines"))
+        panel.add_item(discord.ui.TextDisplay("# 💣 REI DADO • Mines"))
         panel.add_item(discord.ui.Separator())
         safe_count = len(self.revealed)
         multiplier = self._multiplier() if safe_count else 1.0
@@ -344,7 +344,7 @@ class QuizView(discord.ui.LayoutView):
         self.clear_items()
         panel = discord.ui.Container(accent_colour=self.result_color)
         if self.done:
-            panel.add_item(discord.ui.TextDisplay(f"# ✦ SR.ALPHA • {self.result_title}"))
+            panel.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {self.result_title}"))
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(self.result_description))
             panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
