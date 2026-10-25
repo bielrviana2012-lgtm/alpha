@@ -238,12 +238,20 @@ class Economy(commands.Cog):
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT user_id, wallet+bank AS total FROM users WHERE guild_id=? ORDER BY total DESC LIMIT 10", (interaction.guild_id,)); rows = await cur.fetchall()
         if not rows: return await interaction.response.send_message("Ainda não há dados de economia.", ephemeral=True)
-        lines = [f"**{i}.** <@{uid}> — {format_coins(uid, total)} {config.CURRENCY_NAME}" for i,(uid,total) in enumerate(rows,1)]
-        await interaction.response.send_message(view=make_v2_panel(
-            "🏆 Ranking Alpha",
-            "\n".join(lines),
-            footer=f"Sr.Alpha • Ranking dos 10 membros mais ricos",
-        ))
+        lines = []
+        for i, (uid, total) in enumerate(rows, 1):
+            member = interaction.guild.get_member(uid) if interaction.guild else None
+            name = member.display_name if member else f"Membro {uid}"
+            name = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
+            lines.append(f"**{i}.** {name} — {format_coins(uid, total)} {config.CURRENCY_NAME}")
+        await interaction.response.send_message(
+            view=make_v2_panel(
+                "🏆 Ranking Alpha",
+                "\n".join(lines),
+                footer="Sr.Alpha • Ranking dos 10 membros mais ricos",
+            ),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     @app_commands.command(name="produto_criar", description="Adiciona um produto personalizado à loja")
     @app_commands.describe(nome="Nome do produto", preco="Preço em Alpha Coins")
