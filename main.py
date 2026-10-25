@@ -19,7 +19,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 
-logger = logging.getLogger("Sr.Alpha")
+logger = logging.getLogger("Rei Dado")
 
 
 # =========================================================
@@ -206,7 +206,7 @@ _voice_connect_lock = asyncio.Lock()
 
 
 async def connect_fixed_voice_channel():
-    """Mantém o Sr.Alpha conectado ao canal de voz configurado no Railway."""
+    """Mantém o Rei Dado conectado ao canal de voz configurado no Railway."""
     channel_id = int(getattr(config, "VOICE_CHANNEL_ID", 0) or 0)
 
     if channel_id <= 0:
@@ -234,11 +234,11 @@ async def connect_fixed_voice_channel():
 
             if voice_client and voice_client.is_connected():
                 if voice_client.channel and voice_client.channel.id == channel.id:
-                    logger.info("Sr.Alpha já está conectado à call: %s.", channel.name)
+                    logger.info("Rei Dado já está conectado à call: %s.", channel.name)
                     return
 
                 await voice_client.move_to(channel)
-                logger.info("Sr.Alpha mudou para a call fixa: %s.", channel.name)
+                logger.info("Rei Dado mudou para a call fixa: %s.", channel.name)
                 return
 
             if voice_client:
@@ -248,12 +248,12 @@ async def connect_fixed_voice_channel():
                     logger.exception("Falha ao limpar a conexão de voz anterior.")
 
             await channel.connect(timeout=30, reconnect=True, self_deaf=True)
-            logger.info("Sr.Alpha conectado à call fixa: %s (%s).", channel.name, channel.id)
+            logger.info("Rei Dado conectado à call fixa: %s (%s).", channel.name, channel.id)
 
         except discord.Forbidden:
             logger.error(
                 "Sem permissão para entrar no canal de voz %s. "
-                "Confira Ver canal e Conectar para o Sr.Alpha.",
+                "Confira Ver canal e Conectar para o Rei Dado.",
                 channel_id,
             )
         except discord.NotFound:
@@ -262,13 +262,13 @@ async def connect_fixed_voice_channel():
                 channel_id,
             )
         except Exception:
-            logger.exception("Não foi possível conectar o Sr.Alpha à call fixa.")
+            logger.exception("Não foi possível conectar o Rei Dado à call fixa.")
 
 
 @bot.event
 async def on_ready():
     logger.info(
-        "Sr.Alpha conectado como %s (ID: %s)",
+        "Rei Dado conectado como %s (ID: %s)",
         bot.user,
         bot.user.id if bot.user else "desconhecido",
     )
@@ -280,7 +280,7 @@ async def on_ready():
                 name="Family Alpha | Sempre na call",
             )
         )
-        logger.info("Presença personalizada do Sr.Alpha atualizada.")
+        logger.info("Presença personalizada do Rei Dado atualizada.")
 
     except discord.HTTPException:
         logger.exception("Não foi possível atualizar a presença.")
@@ -294,7 +294,7 @@ async def on_ready():
 
 @bot.tree.command(
     name="ajuda",
-    description="Mostra os sistemas do Sr.Alpha",
+    description="Mostra os sistemas do Rei Dado",
 )
 async def ajuda(interaction: discord.Interaction):
     # Components V2 substitui embeds por componentes de layout.
@@ -302,7 +302,7 @@ async def ajuda(interaction: discord.Interaction):
     painel = discord.ui.Container()
 
     painel.add_item(discord.ui.TextDisplay(
-        "# 🤖 Sr.Alpha | Central de ajuda\n"
+        "# 🤖 Rei Dado | Central de ajuda\n"
         "Seu bot geral para a comunidade Family Alpha.\n"
         "Confira abaixo os sistemas disponíveis."
     ))
@@ -350,7 +350,7 @@ async def ajuda(interaction: discord.Interaction):
         painel.add_item(discord.ui.Separator())
 
     painel.add_item(discord.ui.TextDisplay(
-        "-# Sr.Alpha • Family Alpha | Alguns comandos exigem permissões."
+        "-# Rei Dado • Family Alpha | Alguns comandos exigem permissões."
     ))
     layout.add_item(painel)
 
@@ -383,7 +383,7 @@ async def on_app_command_error(
 
     elif isinstance(error, app_commands.BotMissingPermissions):
         message = (
-            "⚠️ O Sr.Alpha não tem todas as permissões necessárias "
+            "⚠️ O Rei Dado não tem todas as permissões necessárias "
             "para executar este comando."
         )
 
