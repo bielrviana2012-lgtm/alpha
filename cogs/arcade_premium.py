@@ -323,6 +323,19 @@ class ArcadePremium(commands.Cog):
     async def start(self, interaction, game, mode, wager=None):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
+
+        # Reconhece o slash command imediatamente. A resposta inicial do Discord
+        # expira em poucos segundos; o banco ou a API podem ultrapassar esse prazo.
+        await interaction.response.defer(thinking=True)
+
+        async def start_error(message):
+            # Remove o indicador público de carregamento e mostra o erro só ao jogador.
+            try:
+                await interaction.delete_original_response()
+            except discord.HTTPException:
+                pass
+            return await interaction.followup.send(message, ephemeral=True)
+
         key = (interaction.guild_id, interaction.user.id)
         previous = ACTIVE_VIEWS.get(key)
         # Evita que uma view presa bloqueie novas partidas após o timeout.
@@ -348,9 +361,8 @@ class ArcadePremium(commands.Cog):
             )
         )
         if previous is not None and not previous_stale:
-            return await interaction.response.send_message(
-                "Você já tem uma partida do Arcade Premium em andamento.",
-                ephemeral=True,
+            return await start_error(
+                "Você já tem uma partida do Arcade Premium em andamento."
             )
         if previous is not None:
             previous.done = True
@@ -359,7 +371,7 @@ class ArcadePremium(commands.Cog):
             ACTIVE.discard(key)
         if mode == "bet":
             if wager is None:
-                return await interaction.response.send_message("Informe o valor da aposta.", ephemeral=True)
+                return await start_error("Informe o valor da aposta.")
             await ensure_user(interaction.guild_id, interaction.user.id)
             if not has_infinite_coins(interaction.user.id):
                 async with aiosqlite.connect(DB_PATH) as db:
@@ -374,16 +386,15 @@ class ArcadePremium(commands.Cog):
                             (interaction.guild_id, interaction.user.id),
                         )).fetchone()
                         await db.rollback()
-                        return await interaction.response.send_message(
-                            f"Saldo insuficiente. Sua carteira tem {row[0] if row else 0:,} {config.CURRENCY_NAME}.",
-                            ephemeral=True,
+                        return await start_error(
+                            f"Saldo insuficiente. Sua carteira tem {row[0] if row else 0:,} {config.CURRENCY_NAME}."
                         )
                     await db.commit()
         view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager)
         ACTIVE.add(key)
         ACTIVE_VIEWS[key] = view
         try:
-            await interaction.response.send_message(view=view)
+            await interaction.edit_original_response(view=view)
             view.message = await interaction.original_response()
         except Exception:
             # Não deixe o jogador bloqueado se o envio inicial falhar.
