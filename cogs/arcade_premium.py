@@ -35,6 +35,7 @@ class ArcadeView(discord.ui.LayoutView):
         self.total = random.randint(12, 18)
         self.crash_at = random.uniform(1.25, 4.5)
         self.message = None
+        self.crash_task = None
         self.created_at = asyncio.get_running_loop().time()
         self._build("Partida iniciada! Escolha sua jogada.")
 
@@ -329,9 +330,22 @@ class ArcadePremium(commands.Cog):
             asyncio.get_running_loop().time() - getattr(previous, "created_at", 0)
             if previous is not None else 0
         )
+        # O Crash tem um temporizador próprio. Se a tarefa morrer/cancelar sem
+        # finalizar a view, não mantenha o jogador bloqueado até o limite de 95 s.
+        crash_task_dead = (
+            previous is not None
+            and previous.game == "Crash Alpha"
+            and previous.crash_task is not None
+            and previous.crash_task.done()
+        )
         previous_stale = (
             previous is not None
-            and (previous.done or previous.is_finished() or previous_age > 95)
+            and (
+                previous.done
+                or previous.is_finished()
+                or previous_age > 95
+                or crash_task_dead
+            )
         )
         if previous is not None and not previous_stale:
             return await interaction.response.send_message(
@@ -380,7 +394,7 @@ class ArcadePremium(commands.Cog):
                 ACTIVE_VIEWS.pop(key, None)
             raise
         if game == "Crash Alpha":
-            asyncio.create_task(self.crash_timer(view))
+            view.crash_task = asyncio.create_task(self.crash_timer(view))
 
     async def crash_timer(self, view):
         try:
