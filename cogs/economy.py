@@ -1,3 +1,4 @@
+import logging
 import random
 from datetime import date
 import discord
@@ -7,6 +8,8 @@ import aiosqlite
 from database import DB_PATH, get_user, ensure_user, has_infinite_coins, format_coins
 import config
 from cogs.ui_v2 import make_v2_panel
+
+logger = logging.getLogger("Sr.Alpha.Economy")
 
 DEFAULT_SHOP = {"Caixa Misteriosa": 250, "Amuleto Alpha": 500, "Título VIP (cosmético)": 1000}
 
@@ -53,9 +56,27 @@ class Economy(commands.Cog):
 
     @app_commands.command(name="saldo", description="Veja sua carteira e seu banco")
     async def saldo(self, interaction: discord.Interaction, membro: discord.Member | None = None):
-        # Confirma a interação imediatamente para evitar o erro 10062 (Unknown interaction)
-        # enquanto o banco de dados e o painel são preparados.
-        await interaction.response.defer(thinking=True)
+        # Registra a idade da interação antes de responder. O Discord exige
+        # que a primeira resposta seja reconhecida em poucos segundos.
+        interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
+        logger.info(
+            "Comando /saldo recebido: interaction_id=%s idade=%.3fs guild_id=%s user_id=%s",
+            interaction.id,
+            interaction_age,
+            interaction.guild_id,
+            interaction.user.id,
+        )
+
+        # Não fazer consultas ao banco antes de confirmar a interação.
+        try:
+            await interaction.response.defer(thinking=True)
+        except discord.HTTPException:
+            logger.exception(
+                "Falha ao confirmar /saldo: interaction_id=%s idade=%.3fs",
+                interaction.id,
+                interaction_age,
+            )
+            raise
 
         target = membro or interaction.user
         row = await get_user(interaction.guild_id, target.id)
