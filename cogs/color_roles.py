@@ -82,7 +82,7 @@ def build_panel_container(guild_id, title, description):
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay("⚠️ Ainda não existem cores configuradas."))
     container.add_item(discord.ui.Separator())
-    container.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+    container.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
     return container
 
 
@@ -164,7 +164,7 @@ class ColorPanelView(discord.ui.LayoutView):
             ):
                 return await interaction.response.send_message(
                     "❌ Não consigo gerenciar esse cargo. "
-                    "Verifique a hierarquia do Sr.Alpha.",
+                    "Verifique a hierarquia do Rei Dado.",
                     ephemeral=True
                 )
 
@@ -181,7 +181,7 @@ class ColorPanelView(discord.ui.LayoutView):
                 if selected_role in member.roles:
                     await member.remove_roles(
                         selected_role,
-                        reason="Remoção de cor pelo painel Sr.Alpha"
+                        reason="Remoção de cor pelo painel Rei Dado"
                     )
                     message = (
                         f"🎨 Você removeu a cor **{selected_role.name}**."
@@ -196,12 +196,12 @@ class ColorPanelView(discord.ui.LayoutView):
                     if to_remove:
                         await member.remove_roles(
                             *to_remove,
-                            reason="Troca de cor pelo painel Sr.Alpha"
+                            reason="Troca de cor pelo painel Rei Dado"
                         )
 
                     await member.add_roles(
                         selected_role,
-                        reason="Escolha de cor pelo painel Sr.Alpha"
+                        reason="Escolha de cor pelo painel Rei Dado"
                     )
                     message = (
                         f"💜 Sua cor agora é **{selected_role.name}**!"
@@ -412,7 +412,7 @@ class ColorRoles(commands.Cog):
 
         if cargo >= guild.me.top_role:
             return await interaction.response.send_message(
-                "❌ O cargo do Sr.Alpha precisa ficar acima "
+                "❌ O cargo do Rei Dado precisa ficar acima "
                 "do cargo escolhido.",
                 ephemeral=True
             )
@@ -526,7 +526,7 @@ class ColorRoles(commands.Cog):
         panel.add_item(discord.ui.TextDisplay("# 🎨 Cores configuradas"))
         panel.add_item(discord.ui.TextDisplay("\n".join(lines)))
         panel.add_item(discord.ui.Separator())
-        panel.add_item(discord.ui.TextDisplay("-# Sr.Alpha • Family Alpha"))
+        panel.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
         layout.add_item(panel)
 
         await interaction.response.send_message(
