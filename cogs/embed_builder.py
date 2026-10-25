@@ -253,7 +253,49 @@ class EmbedBuilder(commands.Cog):
 
         layout.add_item(container)
 
-        # Publica o painel.
+        # Evita duplicar o mesmo painel no canal.
+        # Se já existir um painel criado por este bot com o mesmo título,
+        # remove a versão anterior antes de publicar a atualizada.
+        bot_user = self.bot.user
+        if bot_user is not None:
+            try:
+                async for mensagem in canal.history(limit=100):
+                    if mensagem.author.id != bot_user.id or not mensagem.components:
+                        continue
+
+                    textos = []
+
+                    def coletar_textos(componentes):
+                        for componente in componentes:
+                            texto = getattr(componente, "content", None)
+                            if isinstance(texto, str) and texto:
+                                textos.append(texto)
+                            filhos = getattr(componente, "children", None)
+                            if filhos:
+                                coletar_textos(filhos)
+
+                    coletar_textos(mensagem.components)
+                    texto_painel = "\\n".join(textos)
+
+                    # Só considera painéis deste comando e com o mesmo título.
+                    if (
+                        f"# {titulo}" in texto_painel
+                        and (
+                            "Rei Dado • Family Alpha" in texto_painel
+                            or "Sr.Alpha • Family Alpha" in texto_painel
+                        )
+                    ):
+                        await mensagem.delete()
+
+            except discord.Forbidden:
+                log.warning(
+                    "Sem permissão para verificar/remover painéis antigos em %s.",
+                    canal.id,
+                )
+            except discord.HTTPException:
+                log.exception("Falha ao verificar/remover painel duplicado.")
+
+        # Publica o painel atualizado.
         try:
             await canal.send(
                 view=layout,
