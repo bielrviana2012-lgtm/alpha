@@ -209,10 +209,18 @@ class ArcadeView(discord.ui.LayoutView):
         # usa este lock e pode estar terminando uma atualização de mensagem.
         is_crash = self.game == "Crash Alpha"
         if is_crash:
-            # Marca o saque antes do defer e antes de esperar pelo lock. Assim,
-            # o temporizador não declara crash se o clique já chegou primeiro.
+            # Marca o saque antes de esperar pelo lock para dar prioridade ao clique.
             self.cashout_requested_at = asyncio.get_running_loop().time()
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except discord.NotFound:
+                # O clique chegou tarde demais ao Discord. Desmarca a solicitação
+                # para o temporizador continuar e encerrar a rodada normalmente.
+                self.cashout_requested_at = None
+                return
+            except discord.HTTPException:
+                self.cashout_requested_at = None
+                raise
 
         async with self.lock:
             if self.done:
