@@ -1,3 +1,5 @@
+import logging
+
 import aiosqlite
 import discord
 from discord import app_commands
@@ -5,6 +7,9 @@ from discord.ext import commands
 
 from database import DB_PATH
 from cogs.ui_v2 import make_v2_panel
+
+
+logger = logging.getLogger("Rei Dado")
 
 
 class CommunitySystems(commands.Cog):
@@ -21,23 +26,35 @@ class CommunitySystems(commands.Cog):
         interaction: discord.Interaction,
         membro: discord.Member | None = None,
     ):
-        # Responder imediatamente para evitar expiração da interação enquanto o banco é consultado.
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # Esta deve ser a primeira operação de rede do comando.
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except discord.NotFound as error:
+            # 10062 significa que o token da interação já expirou/é inválido.
+            logger.warning(
+                "Discord rejeitou a interação de /mod_logs antes do defer (código %s).",
+                getattr(error, "code", "desconhecido"),
+            )
+            return
+        except discord.HTTPException:
+            logger.exception("Falha ao confirmar a interação de /mod_logs.")
+            return
 
         try:
             async with aiosqlite.connect(DB_PATH, timeout=10) as db:
                 if membro:
-                    rows = await (await db.execute(
+                    cursor = await db.execute(
                         "SELECT user_id, moderator_id, reason, created_at "
                         "FROM warnings WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 10",
                         (interaction.guild_id, membro.id),
-                    )).fetchall()
+                    )
                 else:
-                    rows = await (await db.execute(
+                    cursor = await db.execute(
                         "SELECT user_id, moderator_id, reason, created_at "
                         "FROM warnings WHERE guild_id=? ORDER BY id DESC LIMIT 10",
                         (interaction.guild_id,),
-                    )).fetchall()
+                    )
+                rows = await cursor.fetchall()
 
             if not rows:
                 description = (
@@ -45,8 +62,8 @@ class CommunitySystems(commands.Cog):
                     if membro else "Não há registros de avisos para mostrar."
                 )
             else:
-                description = "\\n".join(
-                    f"• <@{uid}> — {discord.utils.escape_markdown(str(reason or 'Sem motivo'))[:120]}\\n"
+                description = "\n".join(
+                    f"• <@{uid}> — {discord.utils.escape_markdown(str(reason or 'Sem motivo'))[:120]}\n"
                     f"  Responsável: <@{moderator_id}> · {created_at}"
                     for uid, moderator_id, reason, created_at in rows
                 )
@@ -55,14 +72,14 @@ class CommunitySystems(commands.Cog):
                 view=make_v2_panel("🛡️ Registros de moderação", description)
             )
         except (aiosqlite.Error, discord.HTTPException):
-            # Evita deixar a interação sem resposta se houver falha de banco ou API.
+            logger.exception("Falha ao consultar ou exibir os logs de moderação.")
             try:
                 await interaction.edit_original_response(
                     content="Não foi possível consultar os logs agora. Tente novamente em instantes.",
                     view=None,
                 )
             except discord.HTTPException:
-                pass
+                logger.warning("Não foi possível enviar a mensagem de falha de /mod_logs.")
 
 
 async def setup(bot):
