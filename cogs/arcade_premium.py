@@ -437,6 +437,7 @@ class ArcadePremium(commands.Cog):
 
     async def crash_timer(self, view):
         try:
+            last_message_update = 0.0
             while not view.done:
                 await asyncio.sleep(0.5)
                 async with view.lock:
@@ -447,7 +448,8 @@ class ArcadePremium(commands.Cog):
                     if view.cashout_requested_at is not None:
                         return
                     next_multiplier = round(view.multiplier * 1.15, 2)
-                    if next_multiplier >= view.crash_at:
+                    crashed = next_multiplier >= view.crash_at
+                    if crashed:
                         view.crash_at_time = asyncio.get_running_loop().time()
                         view.done = True
                         settlement = await view.settle(crashed=True)
@@ -460,8 +462,12 @@ class ArcadePremium(commands.Cog):
                     else:
                         view.multiplier = next_multiplier
                         view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
-                    if view.message:
+                    # Não edite a mensagem a cada 0,5 s: isso causa rate limit
+                    # no Discord e pode deixar botões/rodadas sem resposta.
+                    now = asyncio.get_running_loop().time()
+                    if view.message and (crashed or now - last_message_update >= 1.5):
                         await view.message.edit(view=view)
+                        last_message_update = now
         except asyncio.CancelledError:
             raise
         except Exception:
