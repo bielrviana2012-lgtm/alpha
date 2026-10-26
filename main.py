@@ -40,6 +40,7 @@ EXTENSIONS = (
     "cogs.updates",
     "cogs.embed_builder",
     "cogs.expansion",
+    "cogs.community_systems",
     "cogs.arcade_premium",
     "cogs.hierarchy",
 )
@@ -112,7 +113,9 @@ class AlphaBot(commands.Bot):
                 "ticket_configurar_avaliacoes", "fechar_ticket", "sugerir",
                 "status_sugestao", "painel_pings", "adicionar_ping",
                 "remover_ping", "listar_pings", "painel_cores", "criar_embed",
-                "hierarquia",
+                "hierarquia", "colecao", "usar_item", "clan_convite", "eventos",
+                "evento_inscrever", "mod_logs", "config_antispam", "estatisticas",
+                "atividade_servidor", "resumo_servidor", "missao_semanal",
             }
             missing = expected_commands - set(command_names)
             if missing:
@@ -228,6 +231,8 @@ async def ajuda(interaction: discord.Interaction):
         ("💬 Comunidade e tickets", "`/sugerir` — enviar sugestão\n`/status_sugestao` — atualizar uma sugestão\n`/ticket` — publicar painel de atendimento\n`/painel_tickets` — publicar painel de tickets\n`/ticket_categoria_editar` — editar categoria\n`/ticket_categoria_adicionar` — criar categoria\n`/ticket_categoria_equipes` — configurar até 5 equipes por categoria\n`/ticket_categoria_remover` — remover categoria\n`/ticket_configurar_avaliacoes` — configurar avaliações\n`/fechar_ticket` — fechar o ticket atual"),
         ("🎨 Cargos e notificações", "`/painel_cores` — painel de cores\n`/painel_pings` — painel de notificações\n`/adicionar_ping` — cadastrar opção de ping\n`/remover_ping` — remover opção de ping\n`/listar_pings` — listar opções cadastradas"),
         ("🎮 Diversão e níveis", "`/quiz` `/ppt` `/moeda` `/dado` `/slots` `/roleta` `/dados`\n`/mines` `/caraoucoroa` `/bau` `/8ball` `/duelo` `/jogos`\n`/perfil` `/level`\n**Prefixos:** `!jogos` • `Rjogos` • `rjogos`"),
+        ("🌟 Comunidade", "`/colecao` `/usar_item` `/clan_convite` `/eventos` `/evento_inscrever` `/missoes` `/missao_semanal`"),
+        ("📊 Administração", "`/mod_logs` `/config_antispam` `/estatisticas` `/atividade_servidor` `/resumo_servidor`"),
         ("🚀 Atualizações", "`/anunciar_atualizacao` — anunciar novidades do bot"),
         ("🧩 Administração", "`/criar_embed` — criar um painel personalizado com Components V2\n`/hierarquia` — publicar a hierarquia da equipe sem marcar membros"),
     ]
