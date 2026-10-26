@@ -372,70 +372,37 @@ async def ajuda(interaction: discord.Interaction):
 # COMANDO DE PREFIXO !AJUDA / RAJUDA / rajuda
 # =========================================================
 
-@bot.command(name="ajuda")
+@bot.command(name="ajuda", aliases=["help", "comandos"])
 async def ajuda_prefixo(ctx: commands.Context):
-    """Central detalhada de comandos, dividida em mensagens dentro do limite do Discord."""
-    paginas = [
-        (
-            "**🤖 Rei Dado | Central de ajuda (1/3)**\n"
-            "Seu bot de jogos, economia e ferramentas para a Family Alpha.\n"
-            "**Prefixos:** `!`, `R` e `r` — também pode mencionar o bot.\n\n"
-            "**🎮 JOGOS E ARCADE**\n"
-            "`/quiz` — perguntas de conhecimentos gerais; `/ppt` — pedra, papel e tesoura.\n"
-            "`/moeda` e `/caraoucoroa` — jogos de moeda; `/dado` e `/dados` — jogos de dados.\n"
-            "`/slots` — caça-níquel; `/roleta` e `/roleta2` — roletas.\n"
-            "`/mines` — encontre casas seguras; `/bau` e `/cofre` — recompensas misteriosas.\n"
-            "`/8ball` — faça uma pergunta; `/duelo` — desafie a sorte.\n"
-            "`/crash`, `/blackjack`, `/torre`, `/fortuna`, `/dragao` e `/maioroumenor` — Arcade Premium.\n"
-            "`/jogos` ou `!jogos` — veja a lista de jogos. Alguns jogos têm modo grátis ou aposta virtual.\n\n"
-            "**💰 ECONOMIA E LOJA**\n"
-            "`/saldo` — carteira e banco; `/daily` — recompensa diária; `/trabalhar` — ganhe moedas.\n"
-            "`/depositar` e `/sacar` — movimente moedas entre carteira e banco.\n"
-            "`/transferir` e `/presentear` — envie moedas a outro membro.\n"
-            "`/loja`, `/comprar` e `/inventario` — confira, compre e veja seus itens.\n"
-            "`/missao` — missão diária; `/masmorra` — enfrente uma criatura por recompensas.\n"
-            "`/apostar` — menu de jogos opcionais; `/apostar_ativar` e `/apostar_desativar` — escolha participar.\n"
-            "`/apostar_cara_coroa`, `/apostar_sorte` e `/apostar_slots` — jogos opcionais; `/apostar_historico` — histórico."
-        ),
-        (
-            "**🤖 Rei Dado | Central de ajuda (2/3)**\n"
-            "**👤 PERFIL, XP E SOCIAL**\n"
-            "`/perfil` e `/perfil_alpha` — veja perfis; `/level` — nível e XP.\n"
-            "`/top` — rankings; `/conquistas` e `/conquistas_alpha` — conquistas.\n"
-            "`/identidade` — título e emblema; `/reputacao` — reputação positiva.\n"
-            "`/pet_adotar`, `/pet` e `/pet_alimentar` — adote, veja e alimente seu pet.\n"
-            "`/casamento` e `/casamento_desfazer` — gerencie sua dupla social.\n"
-            "`/clan` — crie, entre, saia ou consulte clãs; `/atividade` e `/historico` — informações de membros.\n\n"
-            "**🛡️ MODERAÇÃO**\n"
-            "`/aviso` e `/avisos` — registre e consulte avisos.\n"
-            "`/limpar` — apague mensagens recentes; `/timeout` — aplique timeout.\n"
-            "`/expulsar` e `/banir` — modere membros. Exigem permissões apropriadas.\n\n"
-            "**🎫 TICKETS, SUGESTÕES E BUGS**\n"
-            "`/ticket` e `/painel_tickets` — painel de atendimento; `/fechar_ticket` — feche o ticket atual.\n"
-            "`/ticket_categoria_adicionar`, `/ticket_categoria_editar`, `/ticket_categoria_equipes` e `/ticket_categoria_remover` — configure categorias e equipes.\n"
-            "`/ticket_configurar_avaliacoes` — canal de avaliações; `/sugerir` — envie sugestão.\n"
-            "`/status_sugestao` — atualize o status; `/relatar_bug` — relate um problema.\n"
-            "`/enquete` — crie enquete; `/evento` — publique evento; `/torneio` — gerencie torneios."
-        ),
-        (
-            "**🤖 Rei Dado | Central de ajuda (3/3)**\n"
-            "**🎨 PERSONALIZAÇÃO E NOTIFICAÇÕES**\n"
-            "`/painel_cores`, `/adicionar_cor`, `/remover_cor` e `/listar_cores` — cargos de cores.\n"
-            "`/painel_pings`, `/adicionar_ping`, `/remover_ping` e `/listar_pings` — cargos de notificações.\n"
-            "`/criar_embed` — crie painéis personalizados com Components V2.\n\n"
-            "**🎉 SORTEIOS E ATUALIZAÇÕES**\n"
-            "`/sorteio` — crie sorteio; `/encerrar_sorteio` — encerre um sorteio criado por você.\n"
-            "`/anunciar_atualizacao` — publique novidades do bot.\n\n"
-            "**⚙️ ADMINISTRAÇÃO**\n"
-            "`/setmoney` — define saldo; `/historico_moedas` — consulta alterações na carteira.\n"
-            "`/produto_criar` e `/produto_excluir` — gerencie produtos da loja; restritos a pessoas autorizadas.\n\n"
-            "**Como usar:** comandos com `/` são comandos de barra. Para prefixos, escreva `!`, `R` ou `r` antes do comando. "
-            "Se um comando não aparecer, talvez exija permissão ou não esteja disponível para você.\n"
-            "-# Rei Dado • Family Alpha"
-        ),
+    """Central de ajuda em Discord Components V2."""
+    layout = discord.ui.LayoutView(timeout=120)
+    painel = discord.ui.Container(accent_colour=discord.Colour.from_rgb(145, 103, 255))
+    painel.add_item(discord.ui.TextDisplay(
+        "# 🎲 REI DADO • CENTRAL DE AJUDA\n"
+        "Jogos, economia e ferramentas da Family Alpha.\n"
+        "**Prefixos:** `!`, `R` e `r`\n"
+        "**Exemplos:** `!ajuda`, `!moeda`, `Rjogos`, `rjogos`\n"
+        "Os comandos de barra continuam disponíveis."
+    ))
+    painel.add_item(discord.ui.Separator())
+    secoes = [
+        ("🎮 JOGOS E ARCADE", "`!jogos` — lista de jogos\n"
+         "`!moeda`, `!caraoucoroa`, `!dado`, `!dados`, `!ppt`, `!quiz`, `!slots`, `!roleta`, `!bau`, `!duelo`\n"
+         "Os prefixos de jogo iniciam uma escolha entre modo grátis e aposta quando disponível.\n"
+         "Arcade premium: `/crash`, `/blackjack`, `/torre`, `/fortuna`, `/dragao`, `/maioroumenor`, `/mines`, `/8ball`."),
+        ("💰 ECONOMIA", "`/saldo`, `/daily`, `/trabalhar`, `/depositar`, `/sacar`, `/transferir`, `/loja`, `/comprar`, `/inventario`, `/historico_moedas`."),
+        ("👤 PERFIL E SOCIAL", "`/perfil`, `/perfil_alpha`, `/level`, `/top`, `/conquistas`, `/identidade`, `/reputacao`, `/pet`, `/clan`, `/atividade`."),
+        ("🛡️ MODERAÇÃO", "`/aviso`, `/avisos`, `/limpar`, `/timeout`, `/expulsar`, `/banir` — exigem permissões."),
+        ("🎫 COMUNIDADE", "`/ticket`, `/painel_tickets`, `/fechar_ticket`, `/sugerir`, `/status_sugestao`, `/relatar_bug`."),
+        ("🎨 PAINÉIS", "`/painel_cores`, `/adicionar_cor`, `/remover_cor`, `/listar_cores`, `/painel_pings`, `/adicionar_ping`, `/remover_ping`, `/listar_pings`, `/criar_embed`."),
+        ("⚙️ ADMINISTRAÇÃO E EVENTOS", "`/setmoney`, `/produto_criar`, `/produto_excluir`, `/sorteio`, `/encerrar_sorteio`, `/enquete`, `/evento`, `/torneio`, `/anunciar_atualizacao`. Alguns comandos são restritos à equipe.")
     ]
-    for pagina in paginas:
-        await ctx.send(pagina, allowed_mentions=discord.AllowedMentions.none())
+    for titulo, texto in secoes:
+        painel.add_item(discord.ui.TextDisplay(f"**{titulo}**\n{texto}"))
+        painel.add_item(discord.ui.Separator())
+    painel.add_item(discord.ui.TextDisplay("-# Rei Dado • Family Alpha"))
+    layout.add_item(painel)
+    await ctx.send(view=layout, allowed_mentions=discord.AllowedMentions.none())
 
 
 @bot.event
