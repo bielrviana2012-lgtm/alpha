@@ -28,6 +28,7 @@ logger = logging.getLogger("Rei Dado")
 
 EXTENSIONS = (
     "cogs.economy",
+    "cogs.prefix_commands",
     "cogs.optional_betting",
     "cogs.ping_roles",
     "cogs.color_roles",
