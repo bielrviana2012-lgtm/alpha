@@ -34,7 +34,7 @@ def embed_jogo(titulo, descricao, cor=COR, partida=None, jogo=None):
     panel.add_item(discord.ui.Separator())
     panel.add_item(discord.ui.TextDisplay(descricao[:4000]))
     panel.add_item(discord.ui.Separator())
-    panel.add_item(discord.ui.TextDisplay(f"-# {jogo or titulo} • Partida: {partida:05d}" if partida is not None else "-# Family Alpha • Arcade Premium"))
+    panel.add_item(discord.ui.TextDisplay(f"-# {jogo or titulo} • Partida: {partida:05d} • Family Alpha" if partida is not None else "-# Rei Dado • Family Alpha"))
     layout.add_item(panel)
     return layout
 
@@ -353,7 +353,7 @@ class QuizView(discord.ui.LayoutView):
             panel.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {self.result_title}"))
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(self.result_description))
-            panel.add_item(discord.ui.TextDisplay(f"-# quiz • Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
+            panel.add_item(discord.ui.TextDisplay(f"-# Quiz • Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Rei Dado • Family Alpha"))
             self.add_item(panel)
             return
 
