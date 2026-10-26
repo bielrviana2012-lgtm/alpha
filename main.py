@@ -367,6 +367,47 @@ async def ajuda(interaction: discord.Interaction):
     )
 
 
+
+# =========================================================
+# COMANDO DE PREFIXO !AJUDA / RAJUDA / rajuda
+# =========================================================
+
+@bot.command(name="ajuda")
+async def ajuda_prefixo(ctx: commands.Context):
+    """Versão por mensagem do comando /ajuda."""
+    mensagem = (
+        "**🤖 Rei Dado | Central de ajuda**\\n"
+        "Prefixos disponíveis: `!`, `R` e `r`.\\n\\n"
+        "**🎮 Jogos:** `!jogos`, `Rjogos` ou `rjogos`.\\n"
+        "**💰 Economia:** use os comandos de barra, como `/saldo`, `/daily` e `/loja`.\\n"
+        "**🛡️ Administração e comunidade:** use `/ajuda` para ver a lista completa de comandos.\\n\\n"
+        "Dica: os comandos por barra começam com `/` e os comandos de prefixo começam com `!`, `R` ou `r`."
+    )
+    await ctx.reply(mensagem, mention_author=False)
+
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+    if isinstance(error, commands.CommandNotFound):
+        # Evita traceback para palavras comuns enviadas como se fossem comandos.
+        return
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.reply(
+            f"⏳ Aguarde {error.retry_after:.1f} segundos antes de tentar novamente.",
+            mention_author=False,
+        )
+        return
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.reply("⛔ Você não tem permissão para usar esse comando.", mention_author=False)
+        return
+    logger.error(
+        "Erro em comando de prefixo %s",
+        getattr(ctx.command, "qualified_name", "desconhecido"),
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    await ctx.reply("❌ Ocorreu um erro ao executar esse comando. Confira os logs do bot.", mention_author=False)
+
+
 # =========================================================
 # TRATAMENTO DE ERROS DOS COMANDOS
 # =========================================================
