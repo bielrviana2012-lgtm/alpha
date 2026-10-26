@@ -492,6 +492,11 @@ class ArcadePremium(commands.Cog):
                         continue
                     next_multiplier = round(view.multiplier * 1.15, 2)
                     crashed = next_multiplier >= view.crash_at
+                    # O clique pode chegar enquanto o temporizador aguarda uma
+                    # operação assíncrona anterior. Dê prioridade ao pedido de
+                    # saque registrado antes de iniciar a liquidação de perda.
+                    if crashed and view.cashout_requested_at is not None:
+                        continue
                     if crashed:
                         view.crash_at_time = asyncio.get_running_loop().time()
                         view.done = True
