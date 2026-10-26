@@ -391,7 +391,7 @@ async def ajuda_prefixo(ctx: commands.Context):
          "`!moeda`, `!caraoucoroa`, `!dado`, `!dados`, `!ppt`, `!quiz`, `!slots`, `!roleta`, `!bau`, `!duelo`\n"
          "Os prefixos de jogo iniciam uma escolha entre modo grátis e aposta quando disponível.\n"
          "Arcade premium: `/crash`, `/blackjack`, `/torre`, `/fortuna`, `/dragao`, `/maioroumenor`, `/mines`, `/8ball`."),
-        ("💰 ECONOMIA", "`/saldo`, `/daily`, `/trabalhar`, `/depositar`, `/sacar`, `/transferir`, `/loja`, `/comprar`, `/inventario`, `/historico_moedas`."),
+        ("💰 ECONOMIA", "`!saldo [@membro]`, `!daily`, `!trabalhar`, `!depositar <valor>`, `!sacar <valor>`, `!transferir @membro <valor>`, `!loja`, `!inventario`.\n`!top [fortuna|nivel|xp]`, `!perfil [@membro]`, `!level [@membro]`.\nTambém disponíveis por `/`: `/saldo`, `/daily`, `/trabalhar`, `/depositar`, `/sacar`, `/transferir`, `/loja`, `/comprar`, `/inventario`."),
         ("👤 PERFIL E SOCIAL", "`/perfil`, `/perfil_alpha`, `/level`, `/top`, `/conquistas`, `/identidade`, `/reputacao`, `/pet`, `/clan`, `/atividade`."),
         ("🛡️ MODERAÇÃO", "`/aviso`, `/avisos`, `/limpar`, `/timeout`, `/expulsar`, `/banir` — exigem permissões."),
         ("🎫 COMUNIDADE", "`/ticket`, `/painel_tickets`, `/fechar_ticket`, `/sugerir`, `/status_sugestao`, `/relatar_bug`."),
