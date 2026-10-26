@@ -307,6 +307,24 @@ class CommunitySystems(commands.Cog):
         text = "\n".join(f"• **{name}** — {count} usos" for name, count in uses) or "Ainda não há dados de uso de jogos."
         await interaction.response.send_message(view=make_v2_panel("📈 Atividade registrada", text), ephemeral=True)
 
+    @app_commands.command(name="central_admin", description="Abra a central administrativa do Rei Dado")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def central_admin(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        async with aiosqlite.connect(DB_PATH) as db:
+            users = (await (await db.execute("SELECT COUNT(*) FROM users WHERE guild_id=?", (guild.id,))).fetchone())[0]
+            events = (await (await db.execute("SELECT COUNT(*) FROM alpha_events WHERE guild_id=?", (guild.id,))).fetchone())[0]
+            warnings = (await (await db.execute("SELECT COUNT(*) FROM warnings WHERE guild_id=?", (guild.id,))).fetchone())[0]
+            clans = (await (await db.execute("SELECT COUNT(*) FROM alpha_clans WHERE guild_id=?", (guild.id,))).fetchone())[0]
+        await interaction.response.send_message(view=make_v2_panel(
+            "👑 Central administrativa do Rei Dado",
+            f"**Economia:** {users} contas registradas; saldos preservados.\\n"
+            f"**Comunidade:** {events} eventos e {clans} clãs.\\n"
+            f"**Moderação:** {warnings} avisos registrados.\\n\\n"
+            "Use os comandos administrativos específicos para gerenciar cada sistema."
+        ), ephemeral=True)
+
     @app_commands.command(name="resumo_servidor", description="Abra o resumo administrativo do servidor")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
