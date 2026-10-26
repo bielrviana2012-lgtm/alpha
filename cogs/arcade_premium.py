@@ -468,7 +468,10 @@ class ArcadePremium(commands.Cog):
                     # Se o jogador clicou em sacar antes deste tick, deixa o
                     # callback concluir o saque em vez de resolver como perda.
                     if view.cashout_requested_at is not None:
-                        return
+                        # Não encerre a tarefa do Crash enquanto o callback de saque
+                        # aguarda o lock. Se o clique expirar, o callback limpa a marca
+                        # e o temporizador precisa continuar a rodada.
+                        continue
                     next_multiplier = round(view.multiplier * 1.15, 2)
                     crashed = next_multiplier >= view.crash_at
                     if crashed:
