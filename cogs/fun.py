@@ -436,6 +436,8 @@ class Fun(commands.Cog):
         description="Responda a uma pergunta de conhecimentos gerais",
     )
     async def quiz(self, interaction: discord.Interaction):
+        interaction.extras["game_nome"] = "quiz"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "quiz")
         pergunta, opcoes, resposta = random.choice(QUESTIONS)
         await interaction.response.send_message(
             view=QuizView(opcoes, resposta, interaction.user.id, pergunta, interaction.extras.get("game_partida")),
@@ -757,6 +759,8 @@ class Fun(commands.Cog):
 
     @app_commands.command(name="8ball", description="Analisa sua pergunta e responde com contexto")
     async def oito_bola(self, interaction: discord.Interaction, pergunta: str):
+        interaction.extras["game_nome"] = "8ball"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "8ball")
         import os
         import aiohttp
 
