@@ -480,48 +480,50 @@ class ArcadePremium(commands.Cog):
             last_message_update = 0.0
             while not view.done:
                 await asyncio.sleep(0.5)
+                should_edit = False
                 async with view.lock:
                     if view.done:
                         return
-                    # Se o jogador clicou em sacar antes deste tick, deixa o
-                    # callback concluir o saque em vez de resolver como perda.
+                    # Um saque registrado antes de decidirmos o resultado vence
+                    # este tick; o callback termina a rodada após obter o lock.
                     if view.cashout_requested_at is not None:
-                        # Não encerre a tarefa do Crash enquanto o callback de saque
-                        # aguarda o lock. Se o clique expirar, o callback limpa a marca
-                        # e o temporizador precisa continuar a rodada.
                         continue
+
                     next_multiplier = round(view.multiplier * 1.15, 2)
                     crashed = next_multiplier >= view.crash_at
-                    # O clique pode chegar enquanto o temporizador aguarda uma
-                    # operação assíncrona anterior. Dê prioridade ao pedido de
-                    # saque registrado antes de iniciar a liquidação de perda.
-                    if crashed and view.cashout_requested_at is not None:
-                        continue
                     if crashed:
+                        # Decide o resultado sem nenhum await entre a verificação
+                        # do saque e a marcação do fim da rodada. Um clique posterior
+                        # ao crash não pode transformar uma perda em saque.
                         view.crash_at_time = asyncio.get_running_loop().time()
                         view.done = True
-                        settlement = await view.settle(crashed=True)
                         key = (view.guild_id, view.owner_id)
                         ACTIVE.discard(key)
                         if ACTIVE_VIEWS.get(key) is view:
                             ACTIVE_VIEWS.pop(key, None)
-                        view._build(f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada." + settlement, RED)
                         view.stop()
+                        settlement = await view.settle(crashed=True)
+                        view._build(
+                            f"💥 Crash em **{view.crash_at:.2f}x**! Fim da rodada." + settlement,
+                            RED,
+                        )
+                        should_edit = True
                     else:
                         view.multiplier = next_multiplier
                         view._build("🚀 O multiplicador está subindo! Saque antes do crash.")
-                    # Não edite a mensagem a cada 0,5 s: isso causa rate limit
-                    # no Discord e pode deixar botões/rodadas sem resposta.
-                    now = asyncio.get_running_loop().time()
-                    if view.message and (crashed or now - last_message_update >= 1.5):
-                        await view.message.edit(view=view)
-                        last_message_update = now
+                        now = asyncio.get_running_loop().time()
+                        should_edit = now - last_message_update >= 1.5
+
+                # A edição de rede fica fora do lock para que um clique de saque
+                # possa deferir e registrar a intenção sem esperar a API do Discord.
+                if should_edit and view.message:
+                    await view.message.edit(view=view)
+                    last_message_update = asyncio.get_running_loop().time()
         except asyncio.CancelledError:
             raise
         except Exception:
             import logging
             logging.getLogger(__name__).exception("Falha no temporizador do Crash Alpha")
-            # Limpa o registro primeiro, mesmo se a liquidação ou a edição falhar.
             key = (view.guild_id, view.owner_id)
             view.done = True
             ACTIVE.discard(key)
