@@ -18,6 +18,32 @@ def has_infinite_coins(user_id: int) -> bool:
 def format_coins(user_id: int, amount: int) -> str:
     return "∞" if has_infinite_coins(user_id) else f"{amount:,}"
 
+async def register_game_use(guild_id: int, command_name: str) -> int:
+    """Incrementa e retorna o total persistente de usos de um jogo por servidor."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS game_command_uses (
+                guild_id INTEGER NOT NULL,
+                command_name TEXT NOT NULL,
+                uses INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (guild_id, command_name)
+            )"""
+        )
+        await db.execute(
+            """INSERT INTO game_command_uses (guild_id, command_name, uses)
+               VALUES (?, ?, 1)
+               ON CONFLICT(guild_id, command_name)
+               DO UPDATE SET uses = uses + 1""",
+            (int(guild_id or 0), command_name),
+        )
+        row = await (await db.execute(
+            "SELECT uses FROM game_command_uses WHERE guild_id=? AND command_name=?",
+            (int(guild_id or 0), command_name),
+        )).fetchone()
+        await db.commit()
+        return int(row[0])
+
+
 async def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
