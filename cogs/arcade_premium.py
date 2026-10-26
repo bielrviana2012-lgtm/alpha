@@ -384,10 +384,13 @@ class ArcadePremium(commands.Cog):
         )
         # Crash normalmente termina em poucos segundos. Se uma mensagem falhar
         # ao editar, não deixe uma partida fantasma bloquear o comando !crash.
+        # Uma rodada de Crash normalmente dura poucos segundos. Se a view
+        # ficou registrada por mais de 8 s, ela já é uma partida fantasma:
+        # não deixe uma rodada antiga bloquear o próximo comando.
         crash_stale = (
             previous is not None
             and previous.game == "Crash Alpha"
-            and previous_age > 20
+            and previous_age > 8
         )
         previous_stale = (
             previous is not None
