@@ -6,7 +6,7 @@ import aiosqlite
 from discord import app_commands
 from discord.ext import commands
 
-from database import DB_PATH, ensure_user, has_infinite_coins
+from database import DB_PATH, ensure_user, has_infinite_coins, register_game_use
 import config
 
 PURPLE = discord.Colour.from_rgb(145, 103, 255)
@@ -18,9 +18,10 @@ ACTIVE_VIEWS = {}
 
 
 class ArcadeView(discord.ui.LayoutView):
-    def __init__(self, game, owner_id, guild_id, mode, wager):
+    def __init__(self, game, owner_id, guild_id, mode, wager, partida=None):
         super().__init__(timeout=90)
         self.game = game
+        self.partida = partida
         self.owner_id = owner_id
         self.guild_id = guild_id
         self.mode = mode
@@ -70,7 +71,7 @@ class ArcadeView(discord.ui.LayoutView):
             text += "\n\n" + extra
         box.add_item(discord.ui.TextDisplay(text[:3900]))
         box.add_item(discord.ui.Separator())
-        box.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+        box.add_item(discord.ui.TextDisplay(f"-# {self.game} • Partida: {self.partida:05d}" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
         self.add_item(box)
         if self.done:
             return
@@ -337,9 +338,11 @@ class ArcadePremium(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def start(self, interaction, game, mode, wager=None):
+    async def start(self, interaction, game, mode, wager=None, command_name=None):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
+
+        game_partida = await register_game_use(interaction.guild_id or 0, command_name or game)
 
         # Reconhece o slash command imediatamente. A resposta inicial do Discord
         # expira em poucos segundos; o banco ou a API podem ultrapassar esse prazo.
@@ -407,7 +410,7 @@ class ArcadePremium(commands.Cog):
                             f"Saldo insuficiente. Sua carteira tem {row[0] if row else 0:,} {config.CURRENCY_NAME}."
                         )
                     await db.commit()
-        view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager)
+        view = ArcadeView(game, interaction.user.id, interaction.guild_id, mode, wager, game_partida)
         ACTIVE.add(key)
         ACTIVE_VIEWS[key] = view
         try:
@@ -488,7 +491,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Crash Alpha", modo.value, aposta)
+        interaction.extras["game_nome"] = "crash"
+        await self.start(interaction, "Crash Alpha", modo.value, aposta), "crash")
 
     @app_commands.command(name="cofre", description="Escolha um cofre misterioso grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -503,7 +507,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Cofre Misterioso", modo.value, aposta)
+        interaction.extras["game_nome"] = "cofre"
+        await self.start(interaction, "Cofre Misterioso", modo.value, aposta), "cofre")
 
     @app_commands.command(name="roleta2", description="Gire a Roleta Alpha 2.0 grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -518,7 +523,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Roleta Alpha 2.0", modo.value, aposta)
+        interaction.extras["game_nome"] = "roleta2"
+        await self.start(interaction, "Roleta Alpha 2.0", modo.value, aposta), "roleta2")
 
     @app_commands.command(name="blackjack", description="Jogue Blackjack Premium grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -533,7 +539,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Blackjack Premium", modo.value, aposta)
+        interaction.extras["game_nome"] = "blackjack"
+        await self.start(interaction, "Blackjack Premium", modo.value, aposta), "blackjack")
 
     @app_commands.command(name="torre", description="Suba a Torre Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -548,7 +555,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Torre Alpha", modo.value, aposta)
+        interaction.extras["game_nome"] = "torre"
+        await self.start(interaction, "Torre Alpha", modo.value, aposta), "torre")
 
     @app_commands.command(name="fortuna", description="Abra uma Caixa da Fortuna grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -563,7 +571,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Caixa da Fortuna", modo.value, aposta)
+        interaction.extras["game_nome"] = "fortuna"
+        await self.start(interaction, "Caixa da Fortuna", modo.value, aposta), "fortuna")
 
     @app_commands.command(name="dragao", description="Enfrente as etapas da Caça ao Dragão grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -578,7 +587,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Caça ao Dragão", modo.value, aposta)
+        interaction.extras["game_nome"] = "dragao"
+        await self.start(interaction, "Caça ao Dragão", modo.value, aposta), "dragao")
 
     @app_commands.command(name="maioroumenor", description="Adivinhe se a próxima carta será maior ou menor grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -593,7 +603,8 @@ class ArcadePremium(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
-        await self.start(interaction, "Maior ou Menor", modo.value, aposta)
+        interaction.extras["game_nome"] = "maioroumenor"
+        await self.start(interaction, "Maior ou Menor", modo.value, aposta), "maioroumenor")
 
 
 async def setup(bot):
