@@ -342,11 +342,22 @@ class ArcadePremium(commands.Cog):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
 
-        game_partida = await register_game_use(interaction.guild_id or 0, command_name or game)
+        # Confirma a interação imediatamente, antes de qualquer operação de banco.
+        # O Discord exige a resposta inicial em poucos segundos; se registrar a partida
+        # primeiro, uma demora no banco pode causar 10062 (Unknown interaction).
+        try:
+            await interaction.response.defer(thinking=True)
+        except discord.NotFound:
+            # A interação já expirou antes de conseguirmos confirmá-la.
+            # Não tente responder novamente; registre para diagnóstico e encerre.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Interação do comando %s expirou antes do defer (10062).",
+                command_name or game,
+            )
+            return
 
-        # Reconhece o slash command imediatamente. A resposta inicial do Discord
-        # expira em poucos segundos; o banco ou a API podem ultrapassar esse prazo.
-        await interaction.response.defer(thinking=True)
+        game_partida = await register_game_use(interaction.guild_id or 0, command_name or game)
 
         async def start_error(message):
             # Remove o indicador público de carregamento e mostra o erro só ao jogador.
