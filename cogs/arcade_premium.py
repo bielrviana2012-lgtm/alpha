@@ -15,6 +15,17 @@ RED = discord.Colour.from_rgb(231, 76, 60)
 GOLD = discord.Colour.from_rgb(241, 196, 15)
 ACTIVE = set()
 ACTIVE_VIEWS = {}
+# Serializa o início de partidas por jogador para impedir que dois comandos
+# simultâneos criem views concorrentes e deixem o registro inconsistente.
+START_LOCKS = {}
+
+
+def get_start_lock(key):
+    lock = START_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        START_LOCKS[key] = lock
+    return lock
 
 
 class ArcadeView(discord.ui.LayoutView):
@@ -349,6 +360,13 @@ class ArcadePremium(commands.Cog):
     async def start(self, interaction, game, mode, wager=None, command_name=None):
         if interaction.guild_id is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
+        key = (interaction.guild_id, interaction.user.id)
+        async with get_start_lock(key):
+            return await self._start_locked(interaction, game, mode, wager, command_name)
+
+    async def _start_locked(self, interaction, game, mode, wager=None, command_name=None):
+        if interaction.guild_id is None:
+            return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
 
         # Confirma a interação imediatamente, antes de qualquer operação de banco.
         # O Discord exige a resposta inicial em poucos segundos; se registrar a partida
@@ -364,8 +382,6 @@ class ArcadePremium(commands.Cog):
                 command_name or game,
             )
             return
-
-        game_partida = await register_game_use(interaction.guild_id or 0, command_name or game)
 
         async def start_error(message):
             # Remove o indicador público de carregamento e mostra o erro só ao jogador.
@@ -419,6 +435,8 @@ class ArcadePremium(commands.Cog):
             previous.stop()
             ACTIVE_VIEWS.pop(key, None)
             ACTIVE.discard(key)
+        # Só numera uma partida depois de confirmar que ela pode começar.
+        game_partida = await register_game_use(interaction.guild_id or 0, command_name or game)
         if mode == "bet":
             if wager is None:
                 return await start_error("Informe o valor da aposta.")
