@@ -872,5 +872,173 @@ class Fun(commands.Cog):
         )
 
 
+# =========================================================
+# JOGOS POR PREFIXO — escolha grátis ou aposta antes de jogar
+# =========================================================
+
+class PrefixBetModal(discord.ui.Modal, title="Definir aposta"):
+    valor = discord.ui.TextInput(
+        label="Quantas Sr.Coins deseja apostar?",
+        placeholder="Digite um número (ex.: 100)",
+        min_length=1,
+        max_length=12,
+        required=True,
+    )
+
+    def __init__(self, ctx, game, choice=None):
+        super().__init__(timeout=120)
+        self.ctx, self.game, self.choice = ctx, game, choice
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.ctx.author.id:
+            return await interaction.response.send_message("Esta partida não é sua.", ephemeral=True)
+        try:
+            aposta = int(str(self.valor.value).replace(",", "").replace(".", "").strip())
+        except ValueError:
+            return await interaction.response.send_message("Digite um valor inteiro válido.", ephemeral=True)
+        if aposta < 1 or aposta > 10000:
+            return await interaction.response.send_message("A aposta deve ficar entre 1 e 10.000 Sr.Coins.", ephemeral=True)
+        await self._play(interaction, aposta)
+
+    async def _play(self, interaction, aposta):
+        guild = self.ctx.guild
+        if guild is None:
+            return await interaction.response.send_message("Este jogo só funciona no servidor.", ephemeral=True)
+        user_id = self.ctx.author.id
+        await ensure_user(guild.id, user_id)
+        infinite = has_infinite_coins(user_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            cur = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?", (guild.id, user_id))
+            row = await cur.fetchone()
+            saldo = row[0] if row else 0
+            if not infinite and saldo < aposta:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    f"Saldo insuficiente: carteira {saldo:,} Sr.Coins; aposta {aposta:,}. Nenhuma moeda foi alterada.",
+                    ephemeral=True,
+                )
+            if not infinite:
+                cur = await db.execute("UPDATE users SET wallet=wallet-? WHERE guild_id=? AND user_id=? AND wallet>=?",
+                    (aposta, guild.id, user_id, aposta))
+                if cur.rowcount != 1:
+                    await db.rollback()
+                    return await interaction.response.send_message("Não consegui reservar a aposta; nenhuma moeda foi alterada.", ephemeral=True)
+            await db.commit()
+
+        title, details, payout = prefix_round(self.game, self.choice, aposta)
+        if payout > 0 and not infinite:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (payout, guild.id, user_id))
+                await db.commit()
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?", (guild.id, user_id))
+            row = await cur.fetchone()
+        wallet = "∞" if infinite else f"{(row[0] if row else 0):,}"
+        if payout > aposta:
+            result = f"🏆 Retorno: **{payout:,}** Sr.Coins (lucro líquido **{payout-aposta:,}**)."
+        elif payout == aposta:
+            result = f"🤝 Aposta devolvida: **{aposta:,}** Sr.Coins."
+        else:
+            result = f"💨 Você perdeu **{aposta:,}** Sr.Coins."
+        panel = embed_jogo(title, f"{details}\n\n{result}\n💰 **Carteira:** {wallet} Sr.Coins", partida=None, jogo=self.game)
+        await interaction.response.send_message(view=panel)
+
+
+def prefix_round(game, choice, aposta=0):
+    symbols = ["🍒", "💎", "⭐", "🍀", "🔔"]
+    if game in ("moeda", "caraoucoroa"):
+        chosen = choice or random.choice(["Cara", "Coroa"])
+        result = random.choice(["Cara", "Coroa"])
+        won = chosen == result
+        return "🪙 Cara ou coroa", f"Sua escolha: **{chosen}**\nResultado: **{result}**", aposta * 2 if won else 0
+    if game == "dado":
+        n = random.randint(1, 6)
+        return "🎲 Dado", f"Resultado: **{n}** — {'venceu (4–6)' if n >= 4 else 'não venceu (1–3)'}", aposta * 2 if n >= 4 else 0
+    if game == "dados":
+        a, b = random.randint(1, 6), random.randint(1, 6)
+        payout = aposta * 2 if a > b else aposta if a == b else 0
+        return "🎲 Duelo de dados", f"Você: **{a}** • Rei Dado: **{b}**", payout
+    if game == "slots":
+        reels = [random.choice(symbols) for _ in range(3)]
+        count = len(set(reels))
+        mult = 5 if count == 1 else 2 if count == 2 else 0
+        return "🎰 Slots", f"│ {' '.join(reels)} │", aposta * mult
+    if game == "roleta":
+        chosen = choice or random.choice(["Vermelho", "Preto", "Verde"])
+        result = random.choices(["Vermelho", "Preto", "Verde"], weights=[5, 5, 1])[0]
+        mult = 10 if result == "Verde" else 2
+        return "🎡 Roleta", f"Sua cor: **{chosen}**\nResultado: **{result}**", aposta * mult if chosen == result else 0
+    if game == "bau":
+        event = random.choices(["jackpot", "premio", "nada"], weights=[1, 4, 5])[0]
+        mult = {"jackpot": 5, "premio": 2, "nada": 0}[event]
+        desc = {"jackpot": "🌟 Tesouro lendário!", "premio": "🎁 Você encontrou um tesouro!", "nada": "📦 O baú estava vazio."}[event]
+        return "🎁 Baú misterioso", desc, aposta * mult
+    if game == "duelo":
+        a, b = random.randint(1, 100), random.randint(1, 100)
+        payout = aposta * 2 if a > b else aposta if a == b else 0
+        return "⚔️ Duelo", f"Seu poder: **{a}** • Rei Dado: **{b}**", payout
+    if game == "ppt":
+        a, b = random.choice(["pedra", "papel", "tesoura"]), random.choice(["pedra", "papel", "tesoura"])
+        won = (a, b) in [("pedra", "tesoura"), ("papel", "pedra"), ("tesoura", "papel")]
+        tie = a == b
+        return "✊ Pedra, papel e tesoura", f"Você: **{a}** • Rei Dado: **{b}**", aposta * 2 if won else aposta if tie else 0
+    return "🎮 Jogo", "Este jogo ainda não tem rodada por prefixo. Use o comando de barra correspondente.", 0
+
+
+class PrefixGameView(discord.ui.LayoutView):
+    def __init__(self, ctx, game):
+        super().__init__(timeout=90)
+        self.ctx, self.game = ctx, game
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(f"# 🎲 REI DADO • {game.title()}\nQuer jogar grátis ou apostar Sr.Coins?"),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay("A aposta é opcional. Se escolher apostar, você informa o valor antes da rodada."),
+            accent_colour=COR,
+        ))
+        row = discord.ui.ActionRow()
+        free = discord.ui.Button(label="🎮 Jogar grátis", style=discord.ButtonStyle.success)
+        bet = discord.ui.Button(label="🪙 Apostar Sr.Coins", style=discord.ButtonStyle.primary)
+        free.callback = self.play_free
+        bet.callback = self.ask_bet
+        row.add_item(free)
+        row.add_item(bet)
+        self.add_item(row)
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("Essa escolha pertence a quem iniciou o comando.", ephemeral=True)
+            return False
+        return True
+
+    async def play_free(self, interaction):
+        title, details, _ = prefix_round(self.game, None, 0)
+        panel = embed_jogo(title, f"{details}\n\n🎮 **Modo grátis** — nenhuma moeda foi ganha ou perdida.", jogo=self.game)
+        await interaction.response.edit_message(view=panel)
+
+    async def ask_bet(self, interaction):
+        if self.game not in ("moeda", "caraoucoroa", "dado", "dados", "slots", "roleta", "bau", "duelo", "ppt"):
+            return await interaction.response.send_message("Esse jogo ainda não tem aposta por prefixo. Use o comando / correspondente.", ephemeral=True)
+        await interaction.response.send_modal(PrefixBetModal(self.ctx, self.game))
+
+
+def register_prefix_game(bot, name, aliases=()):
+    async def command(ctx):
+        if ctx.guild is None:
+            return await ctx.reply("Este jogo só funciona dentro do servidor.", mention_author=False)
+        await ctx.send(view=PrefixGameView(ctx, name))
+    command.__name__ = f"prefix_{name}"
+    bot.add_command(commands.Command(command, name=name, aliases=list(aliases)))
+
+
 async def setup(bot):
     await bot.add_cog(Fun(bot))
+    for name, aliases in [
+        ("moeda", []), ("caraoucoroa", ["cara", "coroa"]),
+        ("dado", []), ("dados", []), ("slots", []),
+        ("roleta", []), ("bau", ["baú"]), ("duelo", []),
+        ("ppt", ["pedrapapeltesoura"]),
+    ]:
+        if bot.get_command(name) is None:
+            register_prefix_game(bot, name, aliases)
