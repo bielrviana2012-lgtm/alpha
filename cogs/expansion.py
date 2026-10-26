@@ -267,7 +267,13 @@ class AlphaExpansion(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("INSERT INTO alpha_events(guild_id,creator_id,title,description,starts_at) VALUES(?,?,?,?,?)",(interaction.guild_id,interaction.user.id,titulo,descricao,quando)); await db.commit()
-        await interaction.channel.send(f"## 📅 {discord.utils.escape_markdown(titulo)}\n**Quando:** {discord.utils.escape_markdown(quando)}\n{discord.utils.escape_markdown(descricao)}\nOrganizador: {interaction.user.mention}")
+        await interaction.channel.send(
+            f"## 📅 {discord.utils.escape_markdown(titulo)}\\n"
+            f"**Quando:** {discord.utils.escape_markdown(quando)}\\n"
+            f"{discord.utils.escape_markdown(descricao)}\\n"
+            f"**Organizador:** {discord.utils.escape_markdown(interaction.user.display_name)}",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
         await interaction.followup.send("Evento publicado.",ephemeral=True)
 
     @app_commands.command(name="torneio", description="Crie, entre ou veja torneios")
