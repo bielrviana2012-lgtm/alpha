@@ -46,6 +46,50 @@ class CommunitySystems(commands.Cog):
             """)
             await db.commit()
 
+    @app_commands.command(name="missoes", description="Consulte suas missões diárias e semanais")
+    @app_commands.guild_only()
+    async def missoes(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            view=make_v2_panel(
+                "🎯 Missões do Rei Dado",
+                "• `/missao` — resgate a missão diária já existente.\\n"
+                "• `/missao_semanal` — resgate a missão semanal de **500 Dado Coins**.\\n"
+                "Os resgates são limitados por período e registrados no banco persistente."
+            ), ephemeral=True,
+        )
+
+    @app_commands.command(name="missao_semanal", description="Resgate sua recompensa semanal de Dado Coins")
+    @app_commands.guild_only()
+    async def missao_semanal(self, interaction: discord.Interaction):
+        guild_id, user_id = interaction.guild_id, interaction.user.id
+        today = date.today()
+        week_start = (today - timedelta(days=today.weekday())).isoformat()
+        reward = 500
+        await ensure_user(guild_id, user_id)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            existing = await (await db.execute(
+                "SELECT reward FROM alpha_weekly_claims WHERE guild_id=? AND user_id=? AND week_start=?",
+                (guild_id, user_id, week_start),
+            )).fetchone()
+            if existing:
+                await db.rollback()
+                return await interaction.response.send_message(
+                    f"Você já resgatou a missão semanal desta semana: **{existing[0]:,} Dado Coins**.", ephemeral=True,
+                )
+            await db.execute(
+                "INSERT INTO alpha_weekly_claims(guild_id,user_id,week_start,reward) VALUES(?,?,?,?)",
+                (guild_id, user_id, week_start, reward),
+            )
+            await db.execute(
+                "UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?",
+                (reward, guild_id, user_id),
+            )
+            await db.commit()
+        await interaction.response.send_message(
+            f"🎯 Missão semanal concluída! Você recebeu **{reward:,} Dado Coins**. Volte na próxima semana.",
+        )
+
     @app_commands.command(name="colecao", description="Veja sua coleção de itens e cosméticos")
     @app_commands.guild_only()
     async def colecao(self, interaction: discord.Interaction, membro: discord.Member | None = None):
