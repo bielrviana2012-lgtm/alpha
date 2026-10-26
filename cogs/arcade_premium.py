@@ -492,7 +492,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "crash"
-        await self.start(interaction, "Crash Alpha", modo.value, aposta), "crash")
+        await self.start(interaction, "Crash Alpha", modo.value, aposta, "crash")
 
     @app_commands.command(name="cofre", description="Escolha um cofre misterioso grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -508,7 +508,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "cofre"
-        await self.start(interaction, "Cofre Misterioso", modo.value, aposta), "cofre")
+        await self.start(interaction, "Cofre Misterioso", modo.value, aposta, "cofre")
 
     @app_commands.command(name="roleta2", description="Gire a Roleta Alpha 2.0 grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -540,7 +540,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "blackjack"
-        await self.start(interaction, "Blackjack Premium", modo.value, aposta), "blackjack")
+        await self.start(interaction, "Blackjack Premium", modo.value, aposta, "blackjack")
 
     @app_commands.command(name="torre", description="Suba a Torre Alpha grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -556,7 +556,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "torre"
-        await self.start(interaction, "Torre Alpha", modo.value, aposta), "torre")
+        await self.start(interaction, "Torre Alpha", modo.value, aposta, "torre")
 
     @app_commands.command(name="fortuna", description="Abra uma Caixa da Fortuna grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -572,7 +572,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "fortuna"
-        await self.start(interaction, "Caixa da Fortuna", modo.value, aposta), "fortuna")
+        await self.start(interaction, "Caixa da Fortuna", modo.value, aposta, "fortuna")
 
     @app_commands.command(name="dragao", description="Enfrente as etapas da Caça ao Dragão grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -588,7 +588,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "dragao"
-        await self.start(interaction, "Caça ao Dragão", modo.value, aposta), "dragao")
+        await self.start(interaction, "Caça ao Dragão", modo.value, aposta, "dragao")
 
     @app_commands.command(name="maioroumenor", description="Adivinhe se a próxima carta será maior ou menor grátis ou com aposta virtual")
     @app_commands.guild_only()
@@ -604,7 +604,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "maioroumenor"
-        await self.start(interaction, "Maior ou Menor", modo.value, aposta), "maioroumenor")
+        await self.start(interaction, "Maior ou Menor", modo.value, aposta, "maioroumenor")
 
 
 async def setup(bot):
