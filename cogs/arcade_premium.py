@@ -371,6 +371,13 @@ class ArcadePremium(commands.Cog):
             and previous.crash_task is not None
             and previous.crash_task.done()
         )
+        # Crash normalmente termina em poucos segundos. Se uma mensagem falhar
+        # ao editar, não deixe uma partida fantasma bloquear o comando !crash.
+        crash_stale = (
+            previous is not None
+            and previous.game == "Crash Alpha"
+            and previous_age > 20
+        )
         previous_stale = (
             previous is not None
             and (
@@ -378,6 +385,7 @@ class ArcadePremium(commands.Cog):
                 or previous.is_finished()
                 or previous_age > 95
                 or crash_task_dead
+                or crash_stale
             )
         )
         if previous is not None and not previous_stale:
