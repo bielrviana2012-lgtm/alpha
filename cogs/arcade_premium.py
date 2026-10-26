@@ -524,7 +524,7 @@ class ArcadePremium(commands.Cog):
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
         interaction.extras["game_nome"] = "roleta2"
-        await self.start(interaction, "Roleta Alpha 2.0", modo.value, aposta), "roleta2")
+        await self.start(interaction, "Roleta Alpha 2.0", modo.value, aposta, "roleta2")
 
     @app_commands.command(name="blackjack", description="Jogue Blackjack Premium grátis ou com aposta virtual")
     @app_commands.guild_only()
