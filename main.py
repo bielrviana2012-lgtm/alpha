@@ -190,7 +190,7 @@ intents.members = True
 intents.message_content = True
 
 bot = AlphaBot(
-    command_prefix=["!", "R", "r"],
+    command_prefix=commands.when_mentioned_or("!", "R", "r"),
     intents=intents,
     help_command=None,
 )
@@ -304,9 +304,10 @@ async def ajuda(interaction: discord.Interaction):
     painel.add_item(discord.ui.TextDisplay(
         "# 🤖 Rei Dado | Central de ajuda\n"
         "Seu bot geral para a comunidade Family Alpha.\n"
-        "Prefixos de comandos de texto: `!`, `R` ou `r`.\n"
-        "Exemplos: `!jogos`, `Rjogos` ou `rjogos`.\n"
-        "Os comandos que aparecem como `/comando` continuam disponíveis por barra.\n"
+        "**Prefixos de texto:** `!` • `R` • `r`\n"
+        "**Exemplos:** `!jogos`, `Rjogos`, `rjogos`\n"
+        "Também pode mencionar o bot antes do comando.\n"
+        "Os comandos `/comando` continuam disponíveis por barra.\n"
         "Confira abaixo os sistemas disponíveis."
     ))
     painel.add_item(discord.ui.Separator())
@@ -346,7 +347,7 @@ async def ajuda(interaction: discord.Interaction):
         ("🎮 Diversão e níveis", "`/quiz` `/ppt` `/moeda` `/dado` `/slots` `/roleta` `/dados`\n"
             "`/mines` `/caraoucoroa` `/bau` `/8ball` `/duelo` `/jogos`\n"
             "`/perfil` `/level`\n"
-            "Prefixo para lista de jogos: `!jogos`, `Rjogos` ou `rjogos`"),
+            "**Prefixos:** `!jogos` • `Rjogos` • `rjogos`"),
         ("🚀 Atualizações", "`/anunciar_atualizacao` — anunciar novidades do bot"),
         ("🧩 Administração", "`/criar_embed` — criar um painel personalizado com Components V2"),
     ]
