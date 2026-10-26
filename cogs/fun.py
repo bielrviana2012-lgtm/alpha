@@ -463,8 +463,6 @@ class Fun(commands.Cog):
     ):
         interaction.extras["game_nome"] = "ppt"
         interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "ppt")
-        interaction.extras["game_nome"] = "quiz"
-        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "quiz")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         jogador = escolha.value
         bot = random.choice(["pedra", "papel", "tesoura"])
@@ -859,8 +857,6 @@ class Fun(commands.Cog):
     ):
         interaction.extras["game_nome"] = "duelo"
         interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "duelo")
-        interaction.extras["game_nome"] = "8ball"
-        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "8ball")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         seu = random.randint(1, 100)
         alpha = random.randint(1, 100)
