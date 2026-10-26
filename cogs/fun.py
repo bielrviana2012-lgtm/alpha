@@ -8,7 +8,7 @@ import aiosqlite
 from discord import app_commands
 from discord.ext import commands
 
-from database import DB_PATH, ensure_user, has_infinite_coins, format_coins
+from database import DB_PATH, ensure_user, has_infinite_coins, format_coins, register_game_use
 import config
 
 
@@ -27,14 +27,14 @@ ACTIVE_MINES = set()
 BLACKJACK_LOG = logging.getLogger("Rei Dado.games")
 
 
-def embed_jogo(titulo, descricao, cor=COR):
+def embed_jogo(titulo, descricao, cor=COR, partida=None, jogo=None):
     layout = discord.ui.LayoutView(timeout=None)
     panel = discord.ui.Container(accent_colour=cor)
     panel.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {titulo}"))
     panel.add_item(discord.ui.Separator())
     panel.add_item(discord.ui.TextDisplay(descricao[:4000]))
     panel.add_item(discord.ui.Separator())
-    panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+    panel.add_item(discord.ui.TextDisplay(f"-# {jogo or titulo} • Partida: {partida:05d}" if partida is not None else "-# Family Alpha • Arcade Premium"))
     layout.add_item(panel)
     return layout
 
@@ -60,6 +60,8 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
             titulo,
             f"{descricao}\n\n🎮 **Modo brincadeira**\n"
             "Nenhuma moeda foi ganha ou perdida.",
+            partida=interaction.extras.get("game_partida"),
+            jogo=interaction.extras.get("game_nome", titulo),
         )
         return await interaction.response.send_message(view=embed)
 
@@ -142,6 +144,8 @@ async def finalizar_jogo(interaction, modo, aposta, titulo, descricao,
         f"{descricao}\n\n{resultado}\n\n"
         f"💰 **Carteira atual:** {saldo_formatado} {config.CURRENCY_NAME}",
         cor,
+        partida=interaction.extras.get("game_partida"),
+        jogo=interaction.extras.get("game_nome", titulo),
     )
     await interaction.response.send_message(view=embed)
 
@@ -151,10 +155,11 @@ class MinesView(discord.ui.LayoutView):
 
     TILE_COUNT = 24
 
-    def __init__(self, owner_id, guild_id, modo, aposta, minas):
+    def __init__(self, owner_id, guild_id, modo, aposta, minas, partida=None):
         super().__init__(timeout=120)
         self.owner_id, self.guild_id = owner_id, guild_id
         self.modo, self.aposta, self.mine_count = modo, aposta, minas
+        self.partida = partida
         self.mine_positions = set(random.sample(range(self.TILE_COUNT), minas))
         self.revealed = set()
         self.done = False
@@ -191,14 +196,14 @@ class MinesView(discord.ui.LayoutView):
         if self.done:
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(self.result_text))
-            panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+            panel.add_item(discord.ui.TextDisplay(f"-# Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
             self.add_item(panel)
             return
         panel.add_item(discord.ui.TextDisplay(
             "Revele casas seguras. Se encontrar uma mina, perde a rodada. "
             "Depois de revelar uma casa segura, você pode usar **💰 Sacar**."
         ))
-        panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+        panel.add_item(discord.ui.TextDisplay(f"-# Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
         self.add_item(panel)
 
         # 24 casas e o botão Sacar cabem em cinco linhas de cinco botões.
@@ -329,11 +334,12 @@ class MinesView(discord.ui.LayoutView):
 
 
 class QuizView(discord.ui.LayoutView):
-    def __init__(self, options, answer, owner_id, question):
+    def __init__(self, options, answer, owner_id, question, partida=None):
         super().__init__(timeout=30)
         self.answer = answer
         self.owner_id = owner_id
         self.question = question
+        self.partida = partida
         self.done = False
         self.result_title = None
         self.result_description = None
@@ -432,7 +438,7 @@ class Fun(commands.Cog):
     async def quiz(self, interaction: discord.Interaction):
         pergunta, opcoes, resposta = random.choice(QUESTIONS)
         await interaction.response.send_message(
-            view=QuizView(opcoes, resposta, interaction.user.id, pergunta),
+            view=QuizView(opcoes, resposta, interaction.user.id, pergunta, interaction.extras.get("game_partida")),
         )
 
     @app_commands.command(
@@ -453,6 +459,10 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
+        interaction.extras["game_nome"] = "ppt"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "ppt")
+        interaction.extras["game_nome"] = "quiz"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "quiz")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         jogador = escolha.value
         bot = random.choice(["pedra", "papel", "tesoura"])
@@ -496,6 +506,8 @@ class Fun(commands.Cog):
         escolha: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "CoinFlip"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "CoinFlip")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choice(["Cara", "Coroa"])
         venceu = escolha.value == resultado
@@ -517,6 +529,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "dado"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "dado")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.randint(1, 6)
         venceu = resultado >= 4
@@ -537,6 +551,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "slots"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "slots")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         simbolos = ["🍒", "💎", "⭐", "🍀", "🔔"]
         rolos = [random.choice(simbolos) for _ in range(3)]
@@ -571,6 +587,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "roleta"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "roleta")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choices(
             ["vermelho", "preto", "verde"],
@@ -596,6 +614,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "dados"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "dados")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         seu = random.randint(1, 6)
         alpha = random.randint(1, 6)
@@ -619,6 +639,8 @@ class Fun(commands.Cog):
         minas: app_commands.Range[int, 1, 23],
         aposta: app_commands.Range[int, 1, 1000000000] = None,
     ):
+        interaction.extras["game_nome"] = "mines"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "mines")
         if interaction.guild is None:
             return await interaction.response.send_message("Este jogo só funciona dentro do servidor.", ephemeral=True)
         if modo.value == "bet" and (aposta is None or aposta < 1):
@@ -655,7 +677,7 @@ class Fun(commands.Cog):
             ACTIVE_MINES.discard(active_key)
             raise
 
-        partida = MinesView(interaction.user.id, interaction.guild.id, modo.value, valor_aposta, minas)
+        partida = MinesView(interaction.user.id, interaction.guild.id, modo.value, valor_aposta, minas, interaction.extras.get("game_partida"))
         try:
             await interaction.response.send_message(view=partida)
             partida.message = await interaction.original_response()
@@ -693,6 +715,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "caraoucoroa"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "caraoucoroa")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         resultado = random.choice(["Cara", "Coroa"])
         venceu = escolha.value == resultado
@@ -712,6 +736,8 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "bau"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "bau")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         evento = random.choices(
             ["jackpot", "premio", "nada"],
@@ -815,6 +841,7 @@ class Fun(commands.Cog):
         painel = embed_jogo(
             "🔮 Bola mágica • Análise",
             f"**Pergunta:** {pergunta[:1000]}\n\n**Análise do Rei Dado:** {resposta[:3500]}",
+            partida=interaction.extras.get("game_partida"), jogo="8ball",
         )
         await interaction.followup.send(view=painel)
 
@@ -826,6 +853,10 @@ class Fun(commands.Cog):
         modo: app_commands.Choice[str],
         aposta: app_commands.Range[int, 1, 10000] = None,
     ):
+        interaction.extras["game_nome"] = "duelo"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "duelo")
+        interaction.extras["game_nome"] = "8ball"
+        interaction.extras["game_partida"] = await register_game_use(interaction.guild_id or 0, "8ball")
         aposta = await aposta_efetiva(interaction, modo.value, aposta)
         seu = random.randint(1, 100)
         alpha = random.randint(1, 100)
