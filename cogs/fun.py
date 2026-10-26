@@ -353,14 +353,14 @@ class QuizView(discord.ui.LayoutView):
             panel.add_item(discord.ui.TextDisplay(f"# ✦ REI DADO • {self.result_title}"))
             panel.add_item(discord.ui.Separator())
             panel.add_item(discord.ui.TextDisplay(self.result_description))
-            panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+            panel.add_item(discord.ui.TextDisplay(f"-# quiz • Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
             self.add_item(panel)
             return
 
-        panel.add_item(discord.ui.TextDisplay("# 🧠 Quiz Alpha"))
+        panel.add_item(discord.ui.TextDisplay("# 🧠 REI DADO • Quiz Alpha"))
         panel.add_item(discord.ui.Separator())
         panel.add_item(discord.ui.TextDisplay(f"**{self.question}**\n\nEscolha uma resposta abaixo!"))
-        panel.add_item(discord.ui.TextDisplay("-# Family Alpha • Arcade Premium"))
+        panel.add_item(discord.ui.TextDisplay(f"-# quiz • Partida: {self.partida:05d} • Family Alpha" if self.partida is not None else "-# Family Alpha • Arcade Premium"))
         self.add_item(panel)
 
         row = discord.ui.ActionRow()
