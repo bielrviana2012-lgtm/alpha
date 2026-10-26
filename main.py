@@ -115,7 +115,7 @@ class AlphaBot(commands.Bot):
                 "remover_ping", "listar_pings", "painel_cores", "criar_embed",
                 "hierarquia", "colecao", "usar_item", "clan_convite", "eventos",
                 "evento_inscrever", "mod_logs", "config_antispam", "estatisticas",
-                "atividade_servidor", "resumo_servidor", "missao_semanal",
+                "atividade_servidor", "resumo_servidor", "missoes", "missao_semanal",
             }
             missing = expected_commands - set(command_names)
             if missing:
