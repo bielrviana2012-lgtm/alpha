@@ -409,8 +409,21 @@ class Fun(commands.Cog):
         self.bot = bot
 
     @commands.command(name="jogos", aliases=["games"])
+    @commands.cooldown(1, 3.0, commands.BucketType.channel)
     async def listar_jogos(self, ctx: commands.Context):
         """Lista os jogos disponíveis usando o prefixo !."""
+        # Remove painéis antigos do arcade no mesmo canal antes de publicar o atual.
+        # Isso limpa mensagens antigas, mas não substitui parar outra instância ativa.
+        try:
+            async for mensagem in ctx.channel.history(limit=15):
+                if mensagem.author.id != self.bot.user.id or mensagem.id == ctx.message.id:
+                    continue
+                conteudo = mensagem.content or ""
+                if "Arcade da Family Alpha" in conteudo or "Arcade Premium" in conteudo:
+                    await mensagem.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
         painel = embed_jogo(
             "🎮 Arcade da Family Alpha",
             "**Jogos disponíveis**\n\n"
@@ -430,6 +443,12 @@ class Fun(commands.Cog):
             "Nos jogos com aposta, escolha o modo de Alpha Coins quando disponível."
         )
         await ctx.send(view=painel)
+
+    @listar_jogos.error
+    async def listar_jogos_error(self, ctx: commands.Context, error: commands.CommandError):
+        if isinstance(error, commands.CommandOnCooldown):
+            return
+        raise error
 
     @app_commands.command(
         name="quiz",
