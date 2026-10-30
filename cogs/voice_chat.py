@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 import queue
@@ -11,7 +10,8 @@ from typing import Optional
 import discord
 from discord import app_commands
 from discord.ext import commands, voice_recv
-import websockets
+from google import genai
+from google.genai import types
 
 try:
     import audioop
@@ -19,7 +19,6 @@ except ImportError:  # Python 3.13+
     import audioop_lts as audioop
 
 log = logging.getLogger("Rei Dado.Voz")
-LIVE_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1"
 FRAME_BYTES = 3840  # 20 ms, PCM16, 48 kHz, stereo
 SILENCE = bytes(FRAME_BYTES)
 
@@ -33,7 +32,6 @@ class DiscordPCMSource(discord.AudioSource):
         self.closed = False
 
     def push(self, pcm: bytes):
-        # Divide em quadros de 20 ms exigidos pelo player de voz.
         for offset in range(0, len(pcm), FRAME_BYTES):
             frame = pcm[offset:offset + FRAME_BYTES]
             if len(frame) == FRAME_BYTES:
@@ -65,7 +63,9 @@ class VoiceConversation:
         self.user_id = user_id
         self.loop = asyncio.get_running_loop()
         self.voice: Optional[voice_recv.VoiceRecvClient] = None
-        self.ws = None
+        self.client = None
+        self.live_context = None
+        self.gemini_session = None
         self.reader_task: Optional[asyncio.Task] = None
         self.closed = False
         self.resample_state = None
@@ -73,9 +73,9 @@ class VoiceConversation:
         self.send_lock = asyncio.Lock()
 
     async def start(self, channel: discord.VoiceChannel):
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY não está configurada no Railway.")
+            raise RuntimeError("GEMINI_API_KEY não está configurada no Railway.")
 
         self.voice = await channel.connect(
             cls=voice_recv.VoiceRecvClient,
@@ -83,97 +83,74 @@ class VoiceConversation:
             reconnect=True,
             self_deaf=False,
         )
-        headers = {"Authorization": f"Bearer {api_key}"}
-        self.ws = await websockets.connect(
-            LIVE_URL,
-            additional_headers=headers,
-            ping_interval=20,
-            ping_timeout=20,
-            max_size=8 * 1024 * 1024,
-        )
-        await self.ws.send(__import__("json").dumps({
-            "type": "session.update",
-            "session": {
-                "type": "realtime",
-                "instructions": (
-                    "Você é o Rei Dado, parceiro de conversa descontraído da Family Alpha. "
-                    "Fale sempre em português brasileiro, com energia, humor leve e jeito de resenha. "
-                    "Seja natural, breve e amigável; faça perguntas quando ajudar a conversa. "
-                    "Não invente fatos, não ofenda pessoas e admita quando não souber. "
-                    "Você está conversando por voz em um canal do Discord."
-                ),
-                "output_modalities": ["audio"],
-                "audio": {
-                    "input": {
-                        "format": {"type": "audio/pcm", "rate": 24000},
-                        "turn_detection": {"type": "server_vad", "create_response": True},
-                    },
-                    "output": {
-                        "format": {"type": "audio/pcm", "rate": 24000},
-                        "voice": "marin",
-                    },
-                },
+
+        self.client = genai.Client(api_key=api_key)
+        model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live").strip()
+        config = {
+            "response_modalities": ["AUDIO"],
+            "system_instruction": (
+                "Você é o Rei Dado, parceiro de conversa descontraído da Family Alpha. "
+                "Fale sempre em português brasileiro, com energia, humor leve e jeito de resenha. "
+                "Seja natural, breve e amigável; faça perguntas quando ajudar a conversa. "
+                "Não invente fatos, não ofenda pessoas e admita quando não souber. "
+                "Você está conversando por voz em um canal do Discord."
+            ),
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {"voice_name": "Kore"}
+                }
             },
-        }))
-        ready = False
-        # Aguarda a confirmação de configuração antes de começar a transmitir.
-        for _ in range(20):
-            event = await asyncio.wait_for(self.ws.recv(), timeout=10)
-            data = __import__("json").loads(event)
-            if data.get("type") == "session.updated":
-                ready = True
-                break
-            if data.get("type") == "error":
-                raise RuntimeError(data.get("error", {}).get("message", "Erro ao iniciar sessão de voz."))
-        if not ready:
-            raise RuntimeError("A API não confirmou a sessão de voz.")
+        }
+        self.live_context = self.client.aio.live.connect(model=model, config=config)
+        self.gemini_session = await self.live_context.__aenter__()
 
         def receive_audio(user, packet):
-            # Privacidade: somente o áudio de quem executou /chamar é processado.
+            # Processa somente o áudio de quem executou /chamar.
             if self.closed or user is None or user.id != self.user_id or not packet.pcm:
                 return
             try:
                 mono = audioop.tomono(packet.pcm, 2, 0.5, 0.5)
-                pcm24, self.resample_state = audioop.ratecv(
-                    mono, 2, 1, 48000, 24000, self.resample_state
+                pcm16, self.resample_state = audioop.ratecv(
+                    mono, 2, 1, 48000, 16000, self.resample_state
                 )
-                asyncio.run_coroutine_threadsafe(self.send_audio(pcm24), self.loop)
+                asyncio.run_coroutine_threadsafe(self.send_audio(pcm16), self.loop)
             except Exception:
                 log.exception("Falha ao converter áudio recebido do Discord.")
 
         self.voice.listen(voice_recv.BasicSink(receive_audio, decode=True))
         self.reader_task = asyncio.create_task(self.read_events())
 
-    async def send_audio(self, pcm24: bytes):
-        if self.closed or not self.ws:
+    async def send_audio(self, pcm16: bytes):
+        if self.closed or not self.gemini_session:
             return
         async with self.send_lock:
-            await self.ws.send(__import__("json").dumps({
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(pcm24).decode("ascii"),
-            }))
+            await self.gemini_session.send_realtime_input(
+                audio=types.Blob(data=pcm16, mime_type="audio/pcm;rate=16000")
+            )
 
     async def read_events(self):
         try:
-            async for raw in self.ws:
+            async for response in self.gemini_session.receive():
                 if self.closed:
                     break
-                event = __import__("json").loads(raw)
-                kind = event.get("type")
-                if kind == "input_audio_buffer.speech_started":
+                server_content = getattr(response, "server_content", None)
+                if server_content is None:
+                    continue
+                if getattr(server_content, "interrupted", False):
                     self.stop_output()
-                elif kind == "response.output_audio.delta":
-                    self.play_delta(base64.b64decode(event["delta"]))
-                elif kind == "response.output_audio.done":
-                    if self.output:
-                        self.output.finished.set()
-                elif kind == "error":
-                    log.error("Erro da Realtime API: %s", event.get("error"))
+                model_turn = getattr(server_content, "model_turn", None)
+                if model_turn:
+                    for part in model_turn.parts or []:
+                        inline_data = getattr(part, "inline_data", None)
+                        if inline_data and inline_data.data:
+                            self.play_delta(inline_data.data)
+                if getattr(server_content, "turn_complete", False) and self.output:
+                    self.output.finished.set()
         except asyncio.CancelledError:
             raise
         except Exception:
             if not self.closed:
-                log.exception("Conexão de voz com a OpenAI foi interrompida.")
+                log.exception("Conexão de voz com a Gemini foi interrompida.")
 
     def play_delta(self, pcm24: bytes):
         if not self.voice or self.closed:
@@ -183,7 +160,7 @@ class VoiceConversation:
             if self.voice.is_playing():
                 self.voice.stop()
             self.voice.play(self.output)
-        # OpenAI: mono 24 kHz -> Discord: estéreo 48 kHz.
+        # Gemini: mono 24 kHz -> Discord: estéreo 48 kHz.
         upsampled, _ = audioop.ratecv(pcm24, 2, 1, 24000, 48000, None)
         stereo = audioop.tostereo(upsampled, 2, 1.0, 1.0)
         self.output.push(stereo)
@@ -209,11 +186,11 @@ class VoiceConversation:
         if self.reader_task and self.reader_task is not asyncio.current_task():
             self.reader_task.cancel()
             await asyncio.gather(self.reader_task, return_exceptions=True)
-        if self.ws:
+        if self.live_context:
             try:
-                await self.ws.close()
+                await self.live_context.__aexit__(None, None, None)
             except Exception:
-                log.debug("WebSocket já estava fechado.", exc_info=True)
+                log.debug("Sessão Gemini já estava fechada.", exc_info=True)
         if self.voice and self.voice.is_connected():
             await self.voice.disconnect(force=True)
 
@@ -234,7 +211,6 @@ class VoiceChat(commands.Cog):
         interaction: discord.Interaction,
         canal: Optional[discord.VoiceChannel] = None,
     ):
-        # Reconhece a interação imediatamente: o Discord exige resposta inicial em poucos segundos.
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
