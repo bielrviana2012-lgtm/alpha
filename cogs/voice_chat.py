@@ -220,35 +220,48 @@ class VoiceConversation:
             )
 
     async def read_events(self):
-        # A API Live encerra o iterador receive() ao concluir cada turno.
-        # É necessário abrir um novo iterador para continuar ouvindo respostas
-        # às próximas perguntas, mantendo a mesma sessão Gemini.
-        while not self.closed:
-            try:
-                async for response in self.gemini_session.receive():
-                    if self.closed:
-                        return
-                    server_content = getattr(response, "server_content", None)
-                    if server_content is None:
-                        continue
-                    if getattr(server_content, "interrupted", False):
-                        self.stop_output()
-                    model_turn = getattr(server_content, "model_turn", None)
-                    if model_turn:
-                        for part in model_turn.parts or []:
-                            inline_data = getattr(part, "inline_data", None)
-                            if inline_data and inline_data.data:
-                                self.play_delta(inline_data.data)
-                    if getattr(server_content, "turn_complete", False) and self.output:
+        # session.receive() cria um iterador limitado a um único turno.
+        # Recriá-lo repetidamente pode deixar mensagens de turnos seguintes
+        # sem consumo. O loop interno _receive() mantém um único leitor ativo
+        # durante toda a sessão Live (workaround para o comportamento do SDK).
+        if not hasattr(self.gemini_session, "_receive"):
+            log.error("Esta versão do google-genai não oferece o leitor Live esperado (_receive).")
+            return
+
+        log.info("Leitor contínuo da Gemini iniciado.")
+        try:
+            while not self.closed:
+                response = await self.gemini_session._receive()
+                if self.closed:
+                    return
+                if response is None:
+                    log.warning("A conexão Live da Gemini encerrou o fluxo de respostas.")
+                    return
+
+                go_away = getattr(response, "go_away", None)
+                if go_away is not None:
+                    log.warning("Gemini avisou que encerrará a conexão Live: %s", go_away)
+
+                server_content = getattr(response, "server_content", None)
+                if server_content is None:
+                    continue
+                if getattr(server_content, "interrupted", False):
+                    self.stop_output()
+                model_turn = getattr(server_content, "model_turn", None)
+                if model_turn:
+                    for part in model_turn.parts or []:
+                        inline_data = getattr(part, "inline_data", None)
+                        if inline_data and inline_data.data:
+                            self.play_delta(inline_data.data)
+                if getattr(server_content, "turn_complete", False):
+                    if self.output:
                         self.output.finished.set()
-                if not self.closed:
-                    log.info("Turno da Gemini concluído; aguardando a próxima resposta.")
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                if not self.closed:
-                    log.exception("Conexão de voz com a Gemini foi interrompida.")
-                return
+                    log.info("Turno da Gemini concluído; leitor contínuo permanece ativo.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.closed:
+                log.exception("Leitor contínuo da Gemini foi interrompido.")
 
     def play_delta(self, pcm24: bytes):
         if not self.voice or self.closed:
