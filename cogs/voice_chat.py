@@ -114,9 +114,9 @@ class VoiceConversation:
             ),
             "speech_config": {
                 "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": "Algieba"},
+                    "prebuilt_voice_config": {"voice_name": "Algieba"}
+                },
                 "language_code": "pt-BR"
-                }
             },
         }
         self.live_context = self.client.aio.live.connect(model=model, config=config)
