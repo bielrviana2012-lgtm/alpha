@@ -192,28 +192,35 @@ class VoiceConversation:
             )
 
     async def read_events(self):
-        try:
-            async for response in self.gemini_session.receive():
-                if self.closed:
-                    break
-                server_content = getattr(response, "server_content", None)
-                if server_content is None:
-                    continue
-                if getattr(server_content, "interrupted", False):
-                    self.stop_output()
-                model_turn = getattr(server_content, "model_turn", None)
-                if model_turn:
-                    for part in model_turn.parts or []:
-                        inline_data = getattr(part, "inline_data", None)
-                        if inline_data and inline_data.data:
-                            self.play_delta(inline_data.data)
-                if getattr(server_content, "turn_complete", False) and self.output:
-                    self.output.finished.set()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if not self.closed:
-                log.exception("Conexão de voz com a Gemini foi interrompida.")
+        # A API Live encerra o iterador receive() ao concluir cada turno.
+        # É necessário abrir um novo iterador para continuar ouvindo respostas
+        # às próximas perguntas, mantendo a mesma sessão Gemini.
+        while not self.closed:
+            try:
+                async for response in self.gemini_session.receive():
+                    if self.closed:
+                        return
+                    server_content = getattr(response, "server_content", None)
+                    if server_content is None:
+                        continue
+                    if getattr(server_content, "interrupted", False):
+                        self.stop_output()
+                    model_turn = getattr(server_content, "model_turn", None)
+                    if model_turn:
+                        for part in model_turn.parts or []:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data and inline_data.data:
+                                self.play_delta(inline_data.data)
+                    if getattr(server_content, "turn_complete", False) and self.output:
+                        self.output.finished.set()
+                if not self.closed:
+                    log.info("Turno da Gemini concluído; aguardando a próxima resposta.")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if not self.closed:
+                    log.exception("Conexão de voz com a Gemini foi interrompida.")
+                return
 
     def play_delta(self, pcm24: bytes):
         if not self.voice or self.closed:
