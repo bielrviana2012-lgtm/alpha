@@ -274,13 +274,19 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     else:
         message = "❌ Ocorreu um erro ao executar o comando. Tente novamente e confira os logs do bot."
     try:
+        if interaction.is_expired():
+            logger.warning(
+                "Interação do comando %s já estava expirada; erro original registrado acima.",
+                interaction.command.name if interaction.command else "desconhecido",
+            )
+            return
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
         else:
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound as send_error:
         logger.warning(
-            "A interação do comando %s expirou antes da resposta (código %s).",
+            "Discord recusou a resposta de erro do comando %s (código %s).",
             interaction.command.name if interaction.command else "desconhecido",
             getattr(send_error, "code", "desconhecido"),
         )
