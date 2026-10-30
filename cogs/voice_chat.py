@@ -166,45 +166,40 @@ class VoiceConversation:
                 pass
 
     async def audio_sender(self):
+        # Envia os blocos continuamente. O fim da fala só é sinalizado depois
+        # de um período real sem pacotes; nunca espera 1s após cada lote.
+        speech_open = False
+        silence_timeout = 0.65
         try:
             while not self.closed:
-                first = await self.audio_queue.get()
-                chunks = [first]
-                deadline = self.loop.time() + 0.10
-                while len(chunks) < 10:
-                    remaining = deadline - self.loop.time()
-                    if remaining <= 0:
-                        break
-                    try:
-                        chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
-                    except asyncio.TimeoutError:
-                        break
-                await self.send_audio(b"".join(chunks))
-
-                # O voice-recv só entrega pacotes quando há voz. Se o fluxo
-                # ficar sem novos pacotes por mais de 1 segundo, sinalizamos
-                # o fim do áudio explicitamente conforme a API Gemini Live.
-                # Não inventamos frames de silêncio: isso evita prolongar ou
-                # fragmentar artificialmente as falas.
                 try:
-                    next_audio = await asyncio.wait_for(self.audio_queue.get(), timeout=1.1)
+                    first = await asyncio.wait_for(
+                        self.audio_queue.get(),
+                        timeout=silence_timeout if speech_open else None,
+                    )
                 except asyncio.TimeoutError:
-                    if not self.closed and self.gemini_session:
-                        await self.gemini_session.send_realtime_input(audio_stream_end=True)
-                        log.info("Fim de fala enviado à Gemini (pausa de áudio > 1s).")
+                    if speech_open and self.gemini_session and not self.closed:
+                        async with self.send_lock:
+                            await self.gemini_session.send_realtime_input(audio_stream_end=True)
+                        log.info("Fim de fala enviado à Gemini após 650ms sem áudio.")
+                    speech_open = False
                     continue
 
-                chunks = [next_audio]
-                deadline = self.loop.time() + 0.10
-                while len(chunks) < 10:
+                chunks = [first]
+                deadline = self.loop.time() + 0.06
+                while len(chunks) < 8:
                     remaining = deadline - self.loop.time()
                     if remaining <= 0:
                         break
                     try:
-                        chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
+                        chunks.append(
+                            await asyncio.wait_for(self.audio_queue.get(), timeout=remaining)
+                        )
                     except asyncio.TimeoutError:
                         break
+
                 await self.send_audio(b"".join(chunks))
+                speech_open = True
         except asyncio.CancelledError:
             raise
         except Exception:
