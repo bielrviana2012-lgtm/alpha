@@ -100,15 +100,22 @@ class VoiceConversation:
         config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": (
-                "Você é o Rei Dado, parceiro de conversa descontraído da Family Alpha. "
-                "Fale sempre em português brasileiro, com energia, humor leve e jeito de resenha. "
-                "Seja natural, breve e amigável; faça perguntas quando ajudar a conversa. "
-                "Não invente fatos, não ofenda pessoas e admita quando não souber. "
-                "Você está conversando por voz em um canal do Discord."
+                "Você é o Rei Dado, personagem inspirado no King Dice de Cuphead, adaptado como anfitrião "
+                "carismático da Family Alpha. Fale sempre em português brasileiro. "
+                "Sua interpretação deve lembrar um apresentador elegante de um espetáculo antigo: "
+                "voz masculina madura, grave, aveludada e controlada; dicção clara; ritmo confiante; "
+                "entonação teatral e refinada; humor irônico e provocador, sem ser grosseiro. "
+                "Use frases naturais, respostas breves e comentários espirituosos. "
+                "Às vezes use expressões de anfitrião e mestre de cerimônias, sem exagerar nem repetir bordões. "
+                "Mantenha a personalidade mesmo em conversas comuns, mas seja prestativo e respeitoso. "
+                "Não diga que é o personagem original nem afirme ter a voz de um ator específico. "
+                "Não invente fatos e admita quando não souber. Você conversa por voz em um canal do Discord. "
+                "RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL."
             ),
             "speech_config": {
                 "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": "Kore"}
+                    "prebuilt_voice_config": {"voice_name": "Algieba"},
+                "language_code": "pt-BR"
                 }
             },
         }
@@ -228,25 +235,25 @@ class VoiceChat(commands.Cog):
         interaction: discord.Interaction,
         canal: Optional[discord.VoiceChannel] = None,
     ):
-        # Registra o atraso entre a criação da interação no Discord e o início
-        # do callback. Interações slash precisam ser reconhecidas em até 3 s.
+        # Reconhece a interação imediatamente; o Discord exige resposta em até 3 segundos.
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except discord.NotFound as error:
+            interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
+            log.error(
+                "Interação de /chamar já expirou antes do defer; idade=%.3fs; código=%s",
+                interaction_age,
+                getattr(error, "code", "desconhecido"),
+            )
+            return
+
         interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
         log.info(
-            "Comando /chamar recebido; idade da interação=%.3fs; usuário=%s; guild=%s",
+            "Comando /chamar reconhecido; idade da interação=%.3fs; usuário=%s; guild=%s",
             interaction_age,
             interaction.user.id,
             interaction.guild_id,
         )
-        try:
-            await interaction.response.defer(ephemeral=True, thinking=True)
-        except discord.NotFound as error:
-            log.error(
-                "Discord já considerava expirada a interação de /chamar antes do defer; "
-                "idade=%.3fs; código=%s",
-                (discord.utils.utcnow() - interaction.created_at).total_seconds(),
-                getattr(error, "code", "desconhecido"),
-            )
-            return
 
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.followup.send("Use esse comando dentro de um servidor.", ephemeral=True)
