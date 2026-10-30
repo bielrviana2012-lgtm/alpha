@@ -234,15 +234,18 @@ class VoiceChat(commands.Cog):
         interaction: discord.Interaction,
         canal: Optional[discord.VoiceChannel] = None,
     ):
+        # Reconhece a interação imediatamente: o Discord exige resposta inicial em poucos segundos.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("Use esse comando dentro de um servidor.", ephemeral=True)
+            await interaction.followup.send("Use esse comando dentro de um servidor.", ephemeral=True)
             return
 
         member = interaction.user
         destino = canal
         if destino is None:
             if not member.voice or not isinstance(member.voice.channel, discord.VoiceChannel):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "Escolha um canal de voz no campo **canal** ou entre em um canal antes de usar /chamar.",
                     ephemeral=True,
                 )
@@ -250,11 +253,9 @@ class VoiceChat(commands.Cog):
             destino = member.voice.channel
 
         if destino.guild.id != interaction.guild.id:
-            await interaction.response.send_message("Escolha um canal de voz deste servidor.", ephemeral=True)
+            await interaction.followup.send("Escolha um canal de voz deste servidor.", ephemeral=True)
             return
 
-        # Reconhece a interação antes de esperar por locks ou conectar ao serviço de voz.
-        await interaction.response.defer(ephemeral=True, thinking=True)
         guild_id = interaction.guild.id
         async with self.lock_for(guild_id):
             if guild_id in self.sessions:
