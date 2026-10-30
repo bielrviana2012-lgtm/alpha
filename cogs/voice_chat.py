@@ -227,14 +227,30 @@ class VoiceChat(commands.Cog):
     def lock_for(self, guild_id: int) -> asyncio.Lock:
         return self.locks.setdefault(guild_id, asyncio.Lock())
 
-    @app_commands.command(name="chamar", description="Entra na sua call e conversa por voz com o Rei Dado")
-    async def chamar(self, interaction: discord.Interaction):
+    @app_commands.command(name="chamar", description="Entra em um canal de voz e conversa com o Rei Dado")
+    @app_commands.describe(canal="Escolha o canal de voz. Se deixar vazio, uso seu canal atual.")
+    async def chamar(
+        self,
+        interaction: discord.Interaction,
+        canal: Optional[discord.VoiceChannel] = None,
+    ):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("Use esse comando dentro de um servidor.", ephemeral=True)
             return
+
         member = interaction.user
-        if not member.voice or not isinstance(member.voice.channel, discord.VoiceChannel):
-            await interaction.response.send_message("Entre em um canal de voz primeiro e depois me chame.", ephemeral=True)
+        destino = canal
+        if destino is None:
+            if not member.voice or not isinstance(member.voice.channel, discord.VoiceChannel):
+                await interaction.response.send_message(
+                    "Escolha um canal de voz no campo **canal** ou entre em um canal antes de usar /chamar.",
+                    ephemeral=True,
+                )
+                return
+            destino = member.voice.channel
+
+        if destino.guild.id != interaction.guild.id:
+            await interaction.response.send_message("Escolha um canal de voz deste servidor.", ephemeral=True)
             return
 
         # Reconhece a interação antes de esperar por locks ou conectar ao serviço de voz.
@@ -250,11 +266,11 @@ class VoiceChat(commands.Cog):
 
             session = VoiceConversation(self.bot, guild_id, member.id)
             try:
-                await session.start(member.voice.channel)
+                await session.start(destino)
                 self.sessions[guild_id] = session
                 await interaction.followup.send(
-                    "🎙️ Cheguei! Pode falar comigo. Por privacidade, só vou processar o áudio de quem usou /chamar. "
-                    "Não salvo gravações. Use /sair para encerrar a conversa.",
+                    f"🎙️ Entrei em **{destino.name}**! Pode falar comigo. Por privacidade, só vou processar "
+                    "o áudio de quem usou /chamar. Não salvo gravações. Use /sair para encerrar a conversa.",
                     ephemeral=True,
                 )
             except Exception as error:
