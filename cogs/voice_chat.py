@@ -82,6 +82,10 @@ class VoiceConversation:
         self.resample_state = None
         self.output: Optional[DiscordPCMSource] = None
         self.send_lock = asyncio.Lock()
+        # Agrupa os pacotes de 20 ms antes de enviá-los à Gemini.
+        # Isso evita milhares de corrotinas pequenas acumuladas no loop do bot.
+        self.audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
+        self.audio_sender_task: Optional[asyncio.Task] = None
 
     async def start(self, channel: discord.VoiceChannel):
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -131,7 +135,7 @@ class VoiceConversation:
                 pcm16, self.resample_state = audioop.ratecv(
                     mono, 2, 1, 48000, 16000, self.resample_state
                 )
-                asyncio.run_coroutine_threadsafe(self.send_audio(pcm16), self.loop)
+                self.loop.call_soon_threadsafe(self.enqueue_audio, pcm16)
             except Exception:
                 log.exception("Falha ao converter áudio recebido do Discord.")
 
@@ -140,9 +144,44 @@ class VoiceConversation:
                 "A biblioteca Opus do sistema não está instalada/carregada no Railway; "
                 "não consigo decodificar o áudio recebido do Discord."
             )
+        self.audio_sender_task = asyncio.create_task(self.audio_sender())
         self.voice.listen(voice_recv.BasicSink(receive_audio, decode=True))
         log.info("Recepção de áudio iniciada; aceitando todos os membros do canal.")
         self.reader_task = asyncio.create_task(self.read_events())
+
+    def enqueue_audio(self, pcm16: bytes):
+        if self.closed:
+            return
+        try:
+            self.audio_queue.put_nowait(pcm16)
+        except asyncio.QueueFull:
+            # Prioriza áudio recente em vez de deixar a conversa atrasar.
+            try:
+                self.audio_queue.get_nowait()
+                self.audio_queue.put_nowait(pcm16)
+            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                pass
+
+    async def audio_sender(self):
+        try:
+            while not self.closed:
+                first = await self.audio_queue.get()
+                chunks = [first]
+                deadline = self.loop.time() + 0.10
+                while len(chunks) < 10:
+                    remaining = deadline - self.loop.time()
+                    if remaining <= 0:
+                        break
+                    try:
+                        chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
+                    except asyncio.TimeoutError:
+                        break
+                await self.send_audio(b"".join(chunks))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.closed:
+                log.exception("Falha ao enviar áudio agrupado para a Gemini.")
 
     async def send_audio(self, pcm16: bytes):
         if self.closed or not self.gemini_session:
@@ -207,9 +246,14 @@ class VoiceConversation:
                     self.voice.stop_listening()
             except Exception:
                 log.debug("A recepção de áudio já estava parada.", exc_info=True)
-        if self.reader_task and self.reader_task is not asyncio.current_task():
-            self.reader_task.cancel()
-            await asyncio.gather(self.reader_task, return_exceptions=True)
+        tasks = [
+            task for task in (self.reader_task, self.audio_sender_task)
+            if task and task is not asyncio.current_task()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         if self.live_context:
             try:
                 await self.live_context.__aexit__(None, None, None)
@@ -302,17 +346,28 @@ class VoiceChat(commands.Cog):
 
     @app_commands.command(name="sair", description="Encerra a conversa e tira o Rei Dado da call")
     async def sair(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            await interaction.response.send_message("Use esse comando dentro de um servidor.", ephemeral=True)
+        # Reconhece o comando antes de esperar pelo lock ou desconectar da call.
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except discord.NotFound as error:
+            log.warning(
+                "Interação de /sair expirou antes do defer; idade=%.3fs; código=%s",
+                (discord.utils.utcnow() - interaction.created_at).total_seconds(),
+                getattr(error, "code", "desconhecido"),
+            )
             return
+
+        if not interaction.guild:
+            await interaction.followup.send("Use esse comando dentro de um servidor.", ephemeral=True)
+            return
+
         async with self.lock_for(interaction.guild.id):
             session = self.sessions.pop(interaction.guild.id, None)
             if not session:
-                await interaction.response.send_message("Não estou em uma conversa de voz agora.", ephemeral=True)
+                await interaction.followup.send("Não estou em uma conversa de voz agora.", ephemeral=True)
                 return
-            await interaction.response.defer(ephemeral=True)
             await session.close()
-            await interaction.followup.send("👋 Conversa encerrada. Até a próxima!", ephemeral=True)
+        await interaction.followup.send("👋 Conversa encerrada. Até a próxima!", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
