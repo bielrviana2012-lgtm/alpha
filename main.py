@@ -43,6 +43,7 @@ EXTENSIONS = (
     "cogs.community_systems",
     "cogs.arcade_premium",
     "cogs.hierarchy",
+    "cogs.voice_chat",
 )
 
 
@@ -145,49 +146,6 @@ bot = AlphaBot(
 # EVENTO: BOT CONECTADO
 # =========================================================
 
-_voice_connect_lock = asyncio.Lock()
-
-
-async def connect_fixed_voice_channel():
-    """Mantém o Rei Dado conectado ao canal de voz configurado no Railway."""
-    channel_id = int(getattr(config, "VOICE_CHANNEL_ID", 0) or 0)
-    if channel_id <= 0:
-        logger.info("VOICE_CHANNEL_ID não configurado; conexão automática à call desativada.")
-        return
-
-    async with _voice_connect_lock:
-        try:
-            channel = bot.get_channel(channel_id)
-            if channel is None:
-                channel = await bot.fetch_channel(channel_id)
-            if not isinstance(channel, discord.VoiceChannel):
-                logger.error("VOICE_CHANNEL_ID=%s não aponta para um canal de voz comum.", channel_id)
-                return
-
-            voice_client = discord.utils.get(bot.voice_clients, guild=channel.guild)
-            if voice_client and voice_client.is_connected():
-                if voice_client.channel and voice_client.channel.id == channel.id:
-                    logger.info("Rei Dado já está conectado à call: %s.", channel.name)
-                    return
-                await voice_client.move_to(channel)
-                logger.info("Rei Dado mudou para a call fixa: %s.", channel.name)
-                return
-
-            if voice_client:
-                try:
-                    await voice_client.disconnect(force=True)
-                except discord.DiscordException:
-                    logger.exception("Falha ao limpar a conexão de voz anterior.")
-            await channel.connect(timeout=30, reconnect=True, self_deaf=True)
-            logger.info("Rei Dado conectado à call fixa: %s (%s).", channel.name, channel.id)
-        except discord.Forbidden:
-            logger.error("Sem permissão para entrar no canal de voz %s.", channel_id)
-        except discord.NotFound:
-            logger.error("Canal de voz %s não encontrado.", channel_id)
-        except Exception:
-            logger.exception("Não foi possível conectar o Rei Dado à call fixa.")
-
-
 @bot.event
 async def on_ready():
     logger.info(
@@ -204,7 +162,6 @@ async def on_ready():
         logger.info("Presença personalizada do Rei Dado atualizada.")
     except discord.HTTPException:
         logger.exception("Não foi possível atualizar a presença.")
-    await connect_fixed_voice_channel()
 
 
 # =========================================================
