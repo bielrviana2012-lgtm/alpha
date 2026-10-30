@@ -236,12 +236,18 @@ class VoiceChat(commands.Cog):
         if not member.voice or not isinstance(member.voice.channel, discord.VoiceChannel):
             await interaction.response.send_message("Entre em um canal de voz primeiro e depois me chame.", ephemeral=True)
             return
+
+        # Reconhece a interação antes de esperar por locks ou conectar ao serviço de voz.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         guild_id = interaction.guild.id
         async with self.lock_for(guild_id):
             if guild_id in self.sessions:
-                await interaction.response.send_message("Já estou em uma conversa de voz neste servidor. Use /sair para encerrar.", ephemeral=True)
+                await interaction.followup.send(
+                    "Já estou em uma conversa de voz neste servidor. Use /sair para encerrar.",
+                    ephemeral=True,
+                )
                 return
-            await interaction.response.defer(ephemeral=True, thinking=True)
+
             session = VoiceConversation(self.bot, guild_id, member.id)
             try:
                 await session.start(member.voice.channel)
