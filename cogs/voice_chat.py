@@ -155,6 +155,10 @@ class VoiceConversation:
                 log.debug("Sessão Gemini anterior já estava encerrada.", exc_info=True)
         log.info("Sessão Gemini Live conectada/reconectada.")
 
+        # A reconexão troca apenas a sessão Gemini. Não recria o listener do Discord
+        # nem inicia workers duplicados enquanto a conversa de voz já está ativa.
+        if self.audio_sender_task is not None:
+            return
 
         def receive_audio(user, packet):
             # Responde a qualquer pessoa falando no canal, exceto outros bots.
@@ -266,7 +270,9 @@ class VoiceConversation:
                             self.output.finished.set()
                         log.info("Resposta concluída; conversa permanece aberta para novas perguntas.")
                 if not self.closed:
-                    await asyncio.sleep(0.1)
+                    # O stream também pode terminar sem lançar exceção. Nesse caso,
+                    # sair do async-for significa que a sessão não está mais ativa.
+                    raise ConnectionError("Stream Gemini Live terminou inesperadamente.")
             except asyncio.CancelledError:
                 raise
             except Exception:
