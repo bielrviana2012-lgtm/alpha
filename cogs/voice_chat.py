@@ -77,6 +77,8 @@ class VoiceConversation:
         self.client = None
         self.live_context = None
         self.gemini_session = None
+        self.gemini_model = None
+        self.gemini_config = None
         self.reader_task: Optional[asyncio.Task] = None
         self.closed = False
         self.resample_state = None
@@ -101,8 +103,8 @@ class VoiceConversation:
         )
 
         self.client = genai.Client(api_key=api_key)
-        model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live").strip()
-        config = {
+        self.gemini_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live").strip()
+        self.gemini_config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": (
                 "Você é o Rei Dado, assistente de voz da Family Alpha. Sua personalidade é carismática, "
@@ -121,6 +123,9 @@ class VoiceConversation:
                 "Fale sempre em português brasileiro (pt-BR), mesmo se a pessoa usar palavras estrangeiras. "
                 "Não mude para inglês nem diga que não consegue falar português. Se não entender, peça "
                 "educadamente para repetir. Não invente fatos e admita quando não souber. "
+                "IMPORTANTE: não existe limite de três perguntas, três respostas ou qualquer quantidade fixa. "
+                "Continue conversando enquanto a pessoa quiser e enquanto a sessão estiver ativa. "
+                "Responda a cada nova fala, sem encerrar a conversa por iniciativa própria. "
                 "Você conversa por voz em um canal do Discord. Não diga que é o personagem original "
                 "nem afirme ter a voz de um ator específico."
             ),
@@ -130,8 +135,26 @@ class VoiceConversation:
                 }
             },
         }
-        self.live_context = self.client.aio.live.connect(model=model, config=config)
-        self.gemini_session = await self.live_context.__aenter__()
+        await self.connect_gemini_session()
+
+    async def connect_gemini_session(self):
+        """Abre uma sessão Live nova sem desconectar o bot do canal de voz."""
+        context = self.client.aio.live.connect(
+            model=self.gemini_model,
+            config=self.gemini_config,
+        )
+        session = await context.__aenter__()
+        async with self.send_lock:
+            old_context = self.live_context
+            self.live_context = context
+            self.gemini_session = session
+        if old_context:
+            try:
+                await old_context.__aexit__(None, None, None)
+            except Exception:
+                log.debug("Sessão Gemini anterior já estava encerrada.", exc_info=True)
+        log.info("Sessão Gemini Live conectada/reconectada.")
+
 
         def receive_audio(user, packet):
             # Responde a qualquer pessoa falando no canal, exceto outros bots.
@@ -220,7 +243,8 @@ class VoiceConversation:
             )
 
     async def read_events(self):
-        # Usa a API pública receive() e reabre o iterador ao fim de cada turno.
+        # Mantém a leitura ativa e cria uma nova sessão se a conexão Live cair.
+        retry_delay = 2
         while not self.closed:
             try:
                 async for response in self.gemini_session.receive():
@@ -240,16 +264,28 @@ class VoiceConversation:
                     if getattr(server_content, "turn_complete", False):
                         if self.output:
                             self.output.finished.set()
-                        log.info("Turno da Gemini concluído; aguardando próxima resposta.")
+                        log.info("Resposta concluída; conversa permanece aberta para novas perguntas.")
                 if not self.closed:
-                    log.info("Iterador de resposta terminou; reabrindo receive() na mesma sessão.")
+                    await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 if self.closed:
-                    raise
-                log.exception("Leitor da Gemini falhou; supervisor tentará reiniciá-lo.")
-                return
+                    return
+                log.exception("Conexão de leitura da Gemini caiu; tentando reconectar.")
+                self.stop_output()
+                while not self.closed:
+                    try:
+                        await asyncio.sleep(retry_delay)
+                        await self.connect_gemini_session()
+                        retry_delay = 2
+                        log.info("Gemini reconectada; o bot continua na call do Discord.")
+                        break
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        log.exception("Reconexão da Gemini falhou; nova tentativa em %ss.", retry_delay)
+                        retry_delay = min(retry_delay * 2, 30)
 
     async def supervise_tasks(self):
         # Mantém os trabalhadores essenciais vivos enquanto a call estiver ativa.
