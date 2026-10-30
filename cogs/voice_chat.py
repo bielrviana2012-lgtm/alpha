@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes.util
 import logging
 import os
 import queue
@@ -19,6 +20,16 @@ except ImportError:  # Python 3.13+
     import audioop_lts as audioop
 
 log = logging.getLogger("Rei Dado.Voz")
+
+# discord-ext-voice-recv precisa do Opus nativo para decodificar o áudio
+# recebido. O discord.py nem sempre carrega essa biblioteca automaticamente.
+if not discord.opus.is_loaded():
+    opus_library = ctypes.util.find_library("opus")
+    if opus_library:
+        discord.opus.load_opus(opus_library)
+        log.info("Biblioteca Opus carregada: %s", opus_library)
+    else:
+        log.error("Biblioteca nativa libopus não encontrada; a recepção de voz não funcionará.")
 FRAME_BYTES = 3840  # 20 ms, PCM16, 48 kHz, stereo
 SILENCE = bytes(FRAME_BYTES)
 
@@ -117,7 +128,13 @@ class VoiceConversation:
             except Exception:
                 log.exception("Falha ao converter áudio recebido do Discord.")
 
+        if not discord.opus.is_loaded():
+            raise RuntimeError(
+                "A biblioteca Opus do sistema não está instalada/carregada no Railway; "
+                "não consigo decodificar o áudio recebido do Discord."
+            )
         self.voice.listen(voice_recv.BasicSink(receive_audio, decode=True))
+        log.info("Recepção de áudio iniciada; aceitando todos os membros do canal.")
         self.reader_task = asyncio.create_task(self.read_events())
 
     async def send_audio(self, pcm16: bytes):
