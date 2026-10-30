@@ -284,19 +284,38 @@ class VoiceChat(commands.Cog):
             await interaction.response.defer(ephemeral=True, thinking=True)
         except discord.NotFound as error:
             interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
+            bot_app_id = getattr(self.bot, "application_id", None)
             log.error(
-                "Interação de /chamar já expirou antes do defer; idade=%.3fs; código=%s",
+                "Discord rejeitou o defer de /chamar (10062/Unknown Interaction). "
+                "interaction_id=%s; interaction_app_id=%s; bot_app_id=%s; "
+                "idade_local=%.3fs; gateway_latency=%.3fs; guild=%s; user=%s; "
+                "process_id=%s; código=%s. Verifique relógio do container, "
+                "aplicação/comando instalado e se há mais de uma instância usando o token.",
+                interaction.id,
+                interaction.application_id,
+                bot_app_id,
                 interaction_age,
+                getattr(self.bot, "latency", float("nan")),
+                interaction.guild_id,
+                interaction.user.id,
+                os.getpid(),
                 getattr(error, "code", "desconhecido"),
             )
             return
 
         interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
         log.info(
-            "Comando /chamar reconhecido; idade da interação=%.3fs; usuário=%s; guild=%s",
+            "Comando /chamar reconhecido; interaction_id=%s; idade_local=%.3fs; "
+            "interaction_app_id=%s; bot_app_id=%s; gateway_latency=%.3fs; "
+            "usuário=%s; guild=%s; process_id=%s",
+            interaction.id,
             interaction_age,
+            interaction.application_id,
+            getattr(self.bot, "application_id", None),
+            getattr(self.bot, "latency", float("nan")),
             interaction.user.id,
             interaction.guild_id,
+            os.getpid(),
         )
 
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
