@@ -86,6 +86,7 @@ class VoiceConversation:
         # Isso evita milhares de corrotinas pequenas acumuladas no loop do bot.
         self.audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
         self.audio_sender_task: Optional[asyncio.Task] = None
+        self.supervisor_task: Optional[asyncio.Task] = None
 
     async def start(self, channel: discord.VoiceChannel):
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -147,10 +148,11 @@ class VoiceConversation:
                 "A biblioteca Opus do sistema não está instalada/carregada no Railway; "
                 "não consigo decodificar o áudio recebido do Discord."
             )
-        self.audio_sender_task = asyncio.create_task(self.audio_sender())
+        self.audio_sender_task = asyncio.create_task(self.audio_sender(), name=f"rei-dado-audio-{self.guild_id}")
         self.voice.listen(voice_recv.BasicSink(receive_audio, decode=True))
         log.info("Recepção de áudio iniciada; aceitando todos os membros do canal.")
-        self.reader_task = asyncio.create_task(self.read_events())
+        self.reader_task = asyncio.create_task(self.read_events(), name=f"rei-dado-reader-{self.guild_id}")
+        self.supervisor_task = asyncio.create_task(self.supervise_tasks(), name=f"rei-dado-supervisor-{self.guild_id}")
 
     def enqueue_audio(self, pcm16: bytes):
         if self.closed:
@@ -215,48 +217,75 @@ class VoiceConversation:
             )
 
     async def read_events(self):
-        # session.receive() cria um iterador limitado a um único turno.
-        # Recriá-lo repetidamente pode deixar mensagens de turnos seguintes
-        # sem consumo. O loop interno _receive() mantém um único leitor ativo
-        # durante toda a sessão Live (workaround para o comportamento do SDK).
-        if not hasattr(self.gemini_session, "_receive"):
-            log.error("Esta versão do google-genai não oferece o leitor Live esperado (_receive).")
-            return
+        # Usa a API pública receive() e reabre o iterador ao fim de cada turno.
+        while not self.closed:
+            try:
+                async for response in self.gemini_session.receive():
+                    if self.closed:
+                        return
+                    server_content = getattr(response, "server_content", None)
+                    if server_content is None:
+                        continue
+                    if getattr(server_content, "interrupted", False):
+                        self.stop_output()
+                    model_turn = getattr(server_content, "model_turn", None)
+                    if model_turn:
+                        for part in model_turn.parts or []:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data and inline_data.data:
+                                self.play_delta(inline_data.data)
+                    if getattr(server_content, "turn_complete", False):
+                        if self.output:
+                            self.output.finished.set()
+                        log.info("Turno da Gemini concluído; aguardando próxima resposta.")
+                if not self.closed:
+                    log.info("Iterador de resposta terminou; reabrindo receive() na mesma sessão.")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if self.closed:
+                    raise
+                log.exception("Leitor da Gemini falhou; supervisor tentará reiniciá-lo.")
+                return
 
-        log.info("Leitor contínuo da Gemini iniciado.")
+    async def supervise_tasks(self):
+        # Mantém os trabalhadores essenciais vivos enquanto a call estiver ativa.
         try:
             while not self.closed:
-                response = await self.gemini_session._receive()
+                await asyncio.sleep(2)
                 if self.closed:
                     return
-                if response is None:
-                    log.warning("A conexão Live da Gemini encerrou o fluxo de respostas.")
-                    return
 
-                go_away = getattr(response, "go_away", None)
-                if go_away is not None:
-                    log.warning("Gemini avisou que encerrará a conexão Live: %s", go_away)
+                if self.audio_sender_task and self.audio_sender_task.done():
+                    try:
+                        error = self.audio_sender_task.exception()
+                    except asyncio.CancelledError:
+                        error = None
+                    if error:
+                        log.error("Tarefa de envio de áudio terminou: %r", error)
+                    else:
+                        log.warning("Tarefa de envio de áudio terminou inesperadamente.")
+                    self.audio_sender_task = asyncio.create_task(
+                        self.audio_sender(), name=f"rei-dado-audio-restart-{self.guild_id}"
+                    )
 
-                server_content = getattr(response, "server_content", None)
-                if server_content is None:
-                    continue
-                if getattr(server_content, "interrupted", False):
-                    self.stop_output()
-                model_turn = getattr(server_content, "model_turn", None)
-                if model_turn:
-                    for part in model_turn.parts or []:
-                        inline_data = getattr(part, "inline_data", None)
-                        if inline_data and inline_data.data:
-                            self.play_delta(inline_data.data)
-                if getattr(server_content, "turn_complete", False):
-                    if self.output:
-                        self.output.finished.set()
-                    log.info("Turno da Gemini concluído; leitor contínuo permanece ativo.")
+                if self.reader_task and self.reader_task.done():
+                    try:
+                        error = self.reader_task.exception()
+                    except asyncio.CancelledError:
+                        error = None
+                    if error:
+                        log.error("Tarefa de leitura da Gemini terminou: %r", error)
+                    else:
+                        log.warning("Tarefa de leitura da Gemini terminou inesperadamente.")
+                    self.reader_task = asyncio.create_task(
+                        self.read_events(), name=f"rei-dado-reader-restart-{self.guild_id}"
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:
             if not self.closed:
-                log.exception("Leitor contínuo da Gemini foi interrompido.")
+                log.exception("Supervisor da conversa de voz falhou.")
 
     def play_delta(self, pcm24: bytes):
         if not self.voice or self.closed:
@@ -290,7 +319,7 @@ class VoiceConversation:
             except Exception:
                 log.debug("A recepção de áudio já estava parada.", exc_info=True)
         tasks = [
-            task for task in (self.reader_task, self.audio_sender_task)
+            task for task in (self.reader_task, self.audio_sender_task, self.supervisor_task)
             if task and task is not asyncio.current_task()
         ]
         for task in tasks:
