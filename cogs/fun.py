@@ -470,8 +470,18 @@ class Fun(commands.Cog):
                 if mensagem.author.id != self.bot.user.id:
                     continue
                 texto = mensagem.content or texto_componentes(mensagem.components)
-                if "Arcade da Family Alpha" in texto and (
-                    "SR.ALPHA" in texto or "REI DADO" in texto
+                # Fallback para versões do discord.py que não expõem o texto
+                # dos Components V2 pelos atributos percorridos acima.
+                if not texto:
+                    texto = str(mensagem.components or "")
+
+                # Não exigir a marca antiga/nova: o painel legado pode ter
+                # sido criado como SR.ALPHA e precisa ser atualizado para
+                # REI DADO. O autor continua restrito ao próprio bot.
+                texto_normalizado = texto.casefold()
+                if (
+                    "jogos disponíveis" in texto_normalizado
+                    or "arcade da family alpha" in texto_normalizado
                 ):
                     existentes.append(mensagem)
         except (discord.Forbidden, discord.HTTPException):
