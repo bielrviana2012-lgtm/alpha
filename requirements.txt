@@ -1,7 +1,7 @@
 discord.py[voice]>=2.6.0,<3.0.0
 aiosqlite>=0.20.0
 python-dotenv>=1.0.1
-discord-ext-voice-recv==0.5.2a179
+git+https://github.com/Georg-S/discord-ext-voice-recv.git@18fb4fb280cbcb63ed65c8f3fdc99dedb2c8cebc
 websockets>=14.2
 audioop-lts>=0.2.1
 google-genai>=1.0.0
