@@ -228,7 +228,25 @@ class VoiceChat(commands.Cog):
         interaction: discord.Interaction,
         canal: Optional[discord.VoiceChannel] = None,
     ):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        # Registra o atraso entre a criação da interação no Discord e o início
+        # do callback. Interações slash precisam ser reconhecidas em até 3 s.
+        interaction_age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
+        log.info(
+            "Comando /chamar recebido; idade da interação=%.3fs; usuário=%s; guild=%s",
+            interaction_age,
+            interaction.user.id,
+            interaction.guild_id,
+        )
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except discord.NotFound as error:
+            log.error(
+                "Discord já considerava expirada a interação de /chamar antes do defer; "
+                "idade=%.3fs; código=%s",
+                (discord.utils.utcnow() - interaction.created_at).total_seconds(),
+                getattr(error, "code", "desconhecido"),
+            )
+            return
 
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.followup.send("Use esse comando dentro de um servidor.", ephemeral=True)
