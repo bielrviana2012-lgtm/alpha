@@ -114,13 +114,16 @@ class VoiceConversation:
                 "Mantenha a personalidade mesmo em conversas comuns, mas seja prestativo e respeitoso. "
                 "Não diga que é o personagem original nem afirme ter a voz de um ator específico. "
                 "Não invente fatos e admita quando não souber. Você conversa por voz em um canal do Discord. "
-                "RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL."
+                "REGRA DE IDIOMA OBRIGATÓRIA: entenda e responda sempre em português brasileiro (pt-BR), "
+                "mesmo que a pessoa use palavras estrangeiras ou que o contexto anterior esteja em outro idioma. "
+                "Nunca diga que não consegue falar português, nunca peça para trocar o idioma e nunca mude "
+                "para inglês ou outro idioma. Se não entender uma frase, peça para a pessoa repetir em português. "
+                "Responda de forma natural e completa, sem cortar a resposta no meio."
             ),
             "speech_config": {
                 "voice_config": {
                     "prebuilt_voice_config": {"voice_name": "Algieba"}
-                },
-                "language_code": "pt-BR"
+                }
             },
         }
         self.live_context = self.client.aio.live.connect(model=model, config=config)
@@ -175,12 +178,31 @@ class VoiceConversation:
                     try:
                         chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
                     except asyncio.TimeoutError:
-                        # O voice-recv entrega pacotes de fala, mas pode não
-                        # entregar frames de silêncio. A Gemini precisa receber
-                        # silêncio para detectar o fim da fala (VAD) e responder
-                        # novamente quando houver uma nova pergunta.
-                        silence_500ms = bytes(16000)  # 0,5 s, mono PCM16 a 16 kHz
-                        chunks.append(silence_500ms)
+                        break
+                await self.send_audio(b"".join(chunks))
+
+                # O voice-recv só entrega pacotes quando há voz. Se o fluxo
+                # ficar sem novos pacotes por mais de 1 segundo, sinalizamos
+                # o fim do áudio explicitamente conforme a API Gemini Live.
+                # Não inventamos frames de silêncio: isso evita prolongar ou
+                # fragmentar artificialmente as falas.
+                try:
+                    next_audio = await asyncio.wait_for(self.audio_queue.get(), timeout=1.1)
+                except asyncio.TimeoutError:
+                    if not self.closed and self.gemini_session:
+                        await self.gemini_session.send_realtime_input(audio_stream_end=True)
+                        log.info("Fim de fala enviado à Gemini (pausa de áudio > 1s).")
+                    continue
+
+                chunks = [next_audio]
+                deadline = self.loop.time() + 0.10
+                while len(chunks) < 10:
+                    remaining = deadline - self.loop.time()
+                    if remaining <= 0:
+                        break
+                    try:
+                        chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
+                    except asyncio.TimeoutError:
                         break
                 await self.send_audio(b"".join(chunks))
         except asyncio.CancelledError:
