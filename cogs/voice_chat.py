@@ -175,6 +175,12 @@ class VoiceConversation:
                     try:
                         chunks.append(await asyncio.wait_for(self.audio_queue.get(), timeout=remaining))
                     except asyncio.TimeoutError:
+                        # O voice-recv entrega pacotes de fala, mas pode não
+                        # entregar frames de silêncio. A Gemini precisa receber
+                        # silêncio para detectar o fim da fala (VAD) e responder
+                        # novamente quando houver uma nova pergunta.
+                        silence_500ms = bytes(16000)  # 0,5 s, mono PCM16 a 16 kHz
+                        chunks.append(silence_500ms)
                         break
                 await self.send_audio(b"".join(chunks))
         except asyncio.CancelledError:
