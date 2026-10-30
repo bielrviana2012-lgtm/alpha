@@ -4,3 +4,4 @@ python-dotenv>=1.0.1
 discord-ext-voice-recv==0.5.2a179
 websockets>=14.2
 audioop-lts>=0.2.1
+google-genai>=1.0.0
