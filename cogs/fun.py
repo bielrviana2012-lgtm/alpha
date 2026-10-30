@@ -412,16 +412,44 @@ class Fun(commands.Cog):
     @commands.cooldown(1, 3.0, commands.BucketType.channel)
     async def listar_jogos(self, ctx: commands.Context):
         """Lista os jogos disponíveis usando o prefixo !."""
-        # Remove painéis antigos do arcade no mesmo canal antes de publicar o atual.
-        # Isso limpa mensagens antigas, mas não substitui parar outra instância ativa.
+        # Components V2 guarda o texto em components, não em message.content.
+        # Lê recursivamente o payload dos componentes para reconhecer também
+        # os painéis antigos com a marca SR.ALPHA e evitar duplicatas no canal.
+        def texto_componentes(valor):
+            partes = []
+            if isinstance(valor, dict):
+                for chave, item in valor.items():
+                    if isinstance(item, str):
+                        partes.append(item)
+                    else:
+                        partes.append(texto_componentes(item))
+            elif isinstance(valor, (list, tuple)):
+                for item in valor:
+                    partes.append(texto_componentes(item))
+            elif isinstance(valor, str):
+                partes.append(valor)
+            else:
+                serializar = getattr(valor, "to_dict", None)
+                if callable(serializar):
+                    try:
+                        partes.append(texto_componentes(serializar()))
+                    except (TypeError, ValueError):
+                        pass
+            return " ".join(partes)
+
         try:
-            async for mensagem in ctx.channel.history(limit=15):
+            async for mensagem in ctx.channel.history(limit=30):
                 if mensagem.author.id != self.bot.user.id or mensagem.id == ctx.message.id:
                     continue
                 conteudo = mensagem.content or ""
-                if "Arcade da Family Alpha" in conteudo or "Arcade Premium" in conteudo:
+                if not conteudo and mensagem.components:
+                    conteudo = texto_componentes(mensagem.components)
+                if "Arcade da Family Alpha" in conteudo and (
+                    "SR.ALPHA" in conteudo or "REI DADO" in conteudo
+                ):
                     await mensagem.delete()
         except (discord.Forbidden, discord.HTTPException):
+            # Sem Manage Messages, o painel novo ainda será publicado.
             pass
 
         painel = embed_jogo(
