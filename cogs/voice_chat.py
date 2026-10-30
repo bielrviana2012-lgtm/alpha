@@ -105,8 +105,8 @@ class VoiceConversation:
         self.gemini_session = await self.live_context.__aenter__()
 
         def receive_audio(user, packet):
-            # Processa somente o áudio de quem executou /chamar.
-            if self.closed or user is None or user.id != self.user_id or not packet.pcm:
+            # Responde a qualquer pessoa falando no canal, exceto outros bots.
+            if self.closed or user is None or getattr(user, "bot", False) or not packet.pcm:
                 return
             try:
                 mono = audioop.tomono(packet.pcm, 2, 0.5, 0.5)
@@ -246,8 +246,8 @@ class VoiceChat(commands.Cog):
                 await session.start(destino)
                 self.sessions[guild_id] = session
                 await interaction.followup.send(
-                    f"🎙️ Entrei em **{destino.name}**! Pode falar comigo. Por privacidade, só vou processar "
-                    "o áudio de quem usou /chamar. Não salvo gravações. Use /sair para encerrar a conversa.",
+                    f"🎙️ Entrei em **{destino.name}**! Pode falar comigo: vou ouvir e responder qualquer pessoa que falar neste canal, "
+                    "não apenas quem usou /chamar. Não salvo gravações. Use /sair para encerrar a conversa.",
                     ephemeral=True,
                 )
             except Exception as error:
