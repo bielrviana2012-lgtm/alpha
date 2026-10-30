@@ -411,67 +411,88 @@ class Fun(commands.Cog):
     @commands.command(name="jogos", aliases=["games"])
     @commands.cooldown(1, 3.0, commands.BucketType.channel)
     async def listar_jogos(self, ctx: commands.Context):
-        """Lista os jogos disponíveis usando o prefixo !."""
-        # Components V2 guarda o texto em components, não em message.content.
-        # Lê recursivamente o payload dos componentes para reconhecer também
-        # os painéis antigos com a marca SR.ALPHA e evitar duplicatas no canal.
-        def texto_componentes(valor):
+        """Mostra ou atualiza um único painel de jogos neste canal."""
+        painel = embed_jogo(
+            "🎮 Arcade da Family Alpha",
+            "**Jogos disponíveis**\\n\\n"
+            "🧠 !jogos — mostra esta lista\\n"
+            "🧩 /quiz — perguntas de conhecimentos gerais\\n"
+            "✊ /ppt — pedra, papel e tesoura\\n"
+            "🪙 /moeda — jogue uma moeda\\n"
+            "🎲 /dado — role um dado\\n"
+            "🎰 /slots — caça-níquel\\n"
+            "🎡 /roleta — roleta de cores\\n"
+            "🎲 /dados — duelo de dados\\n"
+            "💣 /mines — escolha a quantidade de minas e saque no momento certo\\n"
+            "🪙 /caraoucoroa — adivinhe cara ou coroa\\n"
+            "🎁 /bau — abra um baú misterioso\\n"
+            "🔮 /8ball — consulte a bola mágica\\n"
+            "⚔️ /duelo — duelo de sorte\\n\\n"
+            "Nos jogos com aposta, escolha o modo de Alpha Coins quando disponível."
+        )
+
+        def texto_componentes(valor, visitados=None):
+            if visitados is None:
+                visitados = set()
+            if valor is None or id(valor) in visitados:
+                return ""
+            visitados.add(id(valor))
             partes = []
+            if isinstance(valor, str):
+                return valor
             if isinstance(valor, dict):
-                for chave, item in valor.items():
-                    if isinstance(item, str):
-                        partes.append(item)
-                    else:
-                        partes.append(texto_componentes(item))
+                for item in valor.values():
+                    partes.append(texto_componentes(item, visitados))
             elif isinstance(valor, (list, tuple)):
                 for item in valor:
-                    partes.append(texto_componentes(item))
-            elif isinstance(valor, str):
-                partes.append(valor)
+                    partes.append(texto_componentes(item, visitados))
             else:
+                # Components V2 expõe o texto em .content e os filhos em
+                # .children/.items; to_dict cobre versões que suportam payload.
+                for atributo in ("content", "children", "items", "components"):
+                    try:
+                        item = getattr(valor, atributo, None)
+                    except Exception:
+                        item = None
+                    if item is not None:
+                        partes.append(texto_componentes(item, visitados))
                 serializar = getattr(valor, "to_dict", None)
                 if callable(serializar):
                     try:
-                        partes.append(texto_componentes(serializar()))
+                        partes.append(texto_componentes(serializar(), visitados))
                     except (TypeError, ValueError):
                         pass
-            return " ".join(partes)
+            return " ".join(p for p in partes if p)
 
+        existentes = []
         try:
-            async for mensagem in ctx.channel.history(limit=30):
-                if mensagem.author.id != self.bot.user.id or mensagem.id == ctx.message.id:
+            async for mensagem in ctx.channel.history(limit=50):
+                if mensagem.author.id != self.bot.user.id:
                     continue
-                conteudo = mensagem.content or ""
-                if not conteudo and mensagem.components:
-                    conteudo = texto_componentes(mensagem.components)
-                if "Arcade da Family Alpha" in conteudo and (
-                    "SR.ALPHA" in conteudo or "REI DADO" in conteudo
+                texto = mensagem.content or texto_componentes(mensagem.components)
+                if "Arcade da Family Alpha" in texto and (
+                    "SR.ALPHA" in texto or "REI DADO" in texto
                 ):
-                    await mensagem.delete()
+                    existentes.append(mensagem)
         except (discord.Forbidden, discord.HTTPException):
-            # Sem Manage Messages, o painel novo ainda será publicado.
-            pass
+            existentes = []
 
-        painel = embed_jogo(
-            "🎮 Arcade da Family Alpha",
-            "**Jogos disponíveis**\n\n"
-            "🧠 !jogos — mostra esta lista\n"
-            "🧩 /quiz — perguntas de conhecimentos gerais\n"
-            "✊ /ppt — pedra, papel e tesoura\n"
-            "🪙 /moeda — jogue uma moeda\n"
-            "🎲 /dado — role um dado\n"
-            "🎰 /slots — caça-níquel\n"
-            "🎡 /roleta — roleta de cores\n"
-            "🎲 /dados — duelo de dados\n"
-            "💣 /mines — escolha a quantidade de minas e saque no momento certo\n"
-            "🪙 /caraoucoroa — adivinhe cara ou coroa\n"
-            "🎁 /bau — abra um baú misterioso\n"
-            "🔮 /8ball — consulte a bola mágica\n"
-            "⚔️ /duelo — duelo de sorte\n\n"
-            "Nos jogos com aposta, escolha o modo de Alpha Coins quando disponível."
-        )
+        # Atualiza uma mensagem existente em vez de apagar e criar outra.
+        if existentes:
+            principal = existentes[0]
+            try:
+                await principal.edit(content=None, view=painel)
+            except discord.HTTPException:
+                await ctx.send(view=painel)
+                return
+            for duplicada in existentes[1:]:
+                try:
+                    await duplicada.delete()
+                except discord.HTTPException:
+                    pass
+            return
+
         await ctx.send(view=painel)
-
     @listar_jogos.error
     async def listar_jogos_error(self, ctx: commands.Context, error: commands.CommandError):
         if isinstance(error, commands.CommandOnCooldown):
