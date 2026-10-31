@@ -270,9 +270,12 @@ class VoiceConversation:
                             self.output.finished.set()
                         log.info("Resposta concluída; conversa permanece aberta para novas perguntas.")
                 if not self.closed:
-                    # O stream também pode terminar sem lançar exceção. Nesse caso,
-                    # sair do async-for significa que a sessão não está mais ativa.
-                    raise ConnectionError("Stream Gemini Live terminou inesperadamente.")
+                    # A Gemini encerra o iterador receive() ao concluir cada turno.
+                    # Isso NÃO significa que a sessão caiu: abra outro iterador na
+                    # mesma sessão para receber a próxima fala, sem reconectar.
+                    log.info("Turno Gemini encerrado; aguardando a próxima fala na mesma sessão.")
+                    await asyncio.sleep(0.05)
+                    continue
             except asyncio.CancelledError:
                 raise
             except Exception:
