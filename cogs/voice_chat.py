@@ -376,13 +376,28 @@ class VoiceConversation:
         if self.closed:
             return
         self.closed = True
+
+        # A prioridade é liberar o canal do Discord. Não espere a Gemini
+        # encerrar a sessão para começar a desconexão.
+        self.stop_output()
         if self.voice:
             try:
-                self.voice.stop()
                 if self.voice.is_listening():
                     self.voice.stop_listening()
+                self.voice.stop()
             except Exception:
                 log.debug("A recepção de áudio já estava parada.", exc_info=True)
+
+        if self.voice and self.voice.is_connected():
+            try:
+                await asyncio.wait_for(self.voice.disconnect(force=True), timeout=4)
+                log.info("Rei Dado desconectado do canal de voz.")
+            except asyncio.TimeoutError:
+                log.warning("Desconexão do Discord excedeu 4s; encerramento seguirá em frente.")
+            except Exception:
+                log.exception("Falha ao desconectar o Rei Dado do canal de voz.")
+                raise
+
         tasks = [
             task for task in (self.reader_task, self.audio_sender_task, self.supervisor_task)
             if task and task is not asyncio.current_task()
@@ -391,17 +406,22 @@ class VoiceConversation:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+        # A limpeza da Gemini tem limite de tempo para não bloquear /sair
+        # nem impedir um novo /chamar.
         if self.live_context:
             try:
-                await self.live_context.__aexit__(None, None, None)
+                await asyncio.wait_for(
+                    self.live_context.__aexit__(None, None, None),
+                    timeout=1.5,
+                )
+            except asyncio.TimeoutError:
+                log.warning("Gemini demorou para fechar; seguindo sem bloquear o Discord.")
             except Exception:
                 log.debug("Sessão Gemini já estava fechada.", exc_info=True)
-        if self.voice and self.voice.is_connected():
-            try:
-                await self.voice.disconnect(force=True)
-            except Exception:
-                log.exception("Falha ao desconectar o Rei Dado do canal de voz.")
-                raise
+            finally:
+                self.live_context = None
+                self.gemini_session = None
 
 
 class VoiceChat(commands.Cog):
