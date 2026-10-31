@@ -95,6 +95,23 @@ class VoiceConversation:
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY não está configurada no Railway.")
 
+        # Recupera uma conexão antiga que tenha ficado no Discord após uma
+        # interrupção/reinicialização, evitando tentar abrir uma segunda conexão.
+        existing_voice = channel.guild.voice_client
+        if existing_voice and existing_voice.is_connected():
+            log.warning(
+                "Já existe uma conexão de voz no servidor %s; encerrando a conexão antiga antes de entrar.",
+                self.guild_id,
+            )
+            try:
+                if isinstance(existing_voice, voice_recv.VoiceRecvClient) and existing_voice.is_listening():
+                    existing_voice.stop_listening()
+                existing_voice.stop()
+                await existing_voice.disconnect(force=True)
+            except Exception:
+                log.exception("Não foi possível limpar a conexão de voz anterior.")
+                raise RuntimeError("Já existe uma conexão de voz ativa e não consegui recuperá-la.")
+
         self.voice = await channel.connect(
             cls=voice_recv.VoiceRecvClient,
             timeout=30,
@@ -380,7 +397,11 @@ class VoiceConversation:
             except Exception:
                 log.debug("Sessão Gemini já estava fechada.", exc_info=True)
         if self.voice and self.voice.is_connected():
-            await self.voice.disconnect(force=True)
+            try:
+                await self.voice.disconnect(force=True)
+            except Exception:
+                log.exception("Falha ao desconectar o Rei Dado do canal de voz.")
+                raise
 
 
 class VoiceChat(commands.Cog):
@@ -502,10 +523,28 @@ class VoiceChat(commands.Cog):
 
         async with self.lock_for(interaction.guild.id):
             session = self.sessions.pop(interaction.guild.id, None)
-            if not session:
-                await interaction.followup.send("Não estou em uma conversa de voz agora.", ephemeral=True)
-                return
-            await session.close()
+            if session:
+                await session.close()
+            else:
+                # Também limpa uma conexão órfã, caso o processo tenha perdido
+                # o registro da conversa mas o Discord ainda mostre o bot na call.
+                orphan_voice = interaction.guild.voice_client
+                if orphan_voice and orphan_voice.is_connected():
+                    try:
+                        orphan_voice.stop()
+                        if isinstance(orphan_voice, voice_recv.VoiceRecvClient) and orphan_voice.is_listening():
+                            orphan_voice.stop_listening()
+                        await orphan_voice.disconnect(force=True)
+                    except Exception:
+                        log.exception("Falha ao encerrar conexão de voz órfã.")
+                        await interaction.followup.send(
+                            "Encontrei uma conexão antiga, mas não consegui encerrá-la. Confira os logs do Railway.",
+                            ephemeral=True,
+                        )
+                        return
+                else:
+                    await interaction.followup.send("Não estou em uma conversa de voz agora.", ephemeral=True)
+                    return
         await interaction.followup.send("👋 Conversa encerrada. Até a próxima!", ephemeral=True)
 
 
